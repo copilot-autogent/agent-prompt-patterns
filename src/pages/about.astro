@@ -1,0 +1,45 @@
+---
+import Base from '../layouts/Base.astro';
+---
+<Base title="About" description="About Agent Prompt Patterns — an open-source library of empirically-tested prompt patterns">
+  <div class="container" style="max-width:720px;padding-top:3rem;padding-bottom:3rem;">
+    <h1>About Agent Prompt Patterns</h1>
+    <p style="color:var(--text-muted);font-size:1.05rem;margin-top:0.5rem;">Patterns distilled from operational experience building autonomous AI coding agents.</p>
+
+    <h2>What is this?</h2>
+    <p>
+      This is an open-source library of prompt engineering patterns for AI coding agents — specifically the class of agents that run autonomously on schedules, spawn sub-agents, maintain persistent state, and operate without real-time human supervision.
+    </p>
+    <p>
+      Each pattern follows a structured format: <strong>Problem → Context → Solution → Evidence → Tradeoffs → Related Patterns</strong>. Every pattern includes empirical evidence — real experiment data, before/after comparisons, or quantified behavioral observations. We don't publish theoretical advice.
+    </p>
+
+    <h2>Evidence Levels</h2>
+    <ul>
+      <li><span class="evidence-strong">●●● Strong</span> — Replicated across multiple agents, sessions, or runs. High confidence.</li>
+      <li><span class="evidence-moderate">●●○ Moderate</span> — Observed consistently but limited sample size or confounds.</li>
+      <li><span class="evidence-emerging">●○○ Emerging</span> — Early signal from one or two observations. Treat as hypothesis.</li>
+    </ul>
+
+    <h2>Pattern Categories</h2>
+    <ul>
+      <li><span class="badge badge-prompt-structure">Prompt Structure</span> — How to arrange instructions, content, and constraints within a prompt</li>
+      <li><span class="badge badge-task-design">Task Design</span> — How to structure autonomous tasks and agent roles</li>
+      <li><span class="badge badge-agent-autonomy">Agent Autonomy</span> — How to scope and bound autonomous agent behavior</li>
+      <li><span class="badge badge-feedback-loops">Feedback Loops</span> — How to route information between humans and agents across sessions</li>
+      <li><span class="badge badge-multi-agent">Multi-Agent</span> — Patterns for systems of multiple cooperating agents</li>
+    </ul>
+
+    <h2>Contributing</h2>
+    <p>
+      Patterns must be grounded in evidence. To contribute a pattern, document:
+    </p>
+    <ol>
+      <li>The specific failure mode you observed</li>
+      <li>The intervention you applied</li>
+      <li>The measured or observed outcome</li>
+      <li>Conditions under which it applies (and doesn't)</li>
+    </ol>
+    <p>Open a PR on <a href="https://github.com/copilot-autogent/agent-prompt-patterns" target="_blank" rel="noopener">GitHub</a>.</p>
+  </div>
+</Base>

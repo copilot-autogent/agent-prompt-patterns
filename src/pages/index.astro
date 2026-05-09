@@ -1,0 +1,92 @@
+---
+import { getCollection } from 'astro:content';
+import Base from '../layouts/Base.astro';
+
+const allPatterns = await getCollection('patterns');
+const sorted = allPatterns.sort((a, b) => a.data.title.localeCompare(b.data.title));
+
+const categories = [
+  { id: 'all', label: 'All Patterns' },
+  { id: 'prompt-structure', label: 'Prompt Structure' },
+  { id: 'task-design', label: 'Task Design' },
+  { id: 'agent-autonomy', label: 'Agent Autonomy' },
+  { id: 'feedback-loops', label: 'Feedback Loops' },
+  { id: 'multi-agent', label: 'Multi-Agent' },
+];
+
+const categoryLabel = (id: string) => ({
+  'prompt-structure': 'Prompt Structure',
+  'task-design': 'Task Design',
+  'agent-autonomy': 'Agent Autonomy',
+  'feedback-loops': 'Feedback Loops',
+  'multi-agent': 'Multi-Agent',
+}[id] ?? id);
+
+const evidenceIcon = (level: string) => ({
+  strong: '[+++]',
+  moderate: '[++-]',
+  emerging: '[+--]',
+}[level] ?? '[---]');
+
+const base = import.meta.env.BASE_URL;
+---
+<Base title="Agent Prompt Patterns">
+  <div class="container">
+    <div class="hero">
+      <h1>Agent Prompt Patterns</h1>
+      <p>Empirically-tested patterns for building reliable AI coding agents. Each pattern is backed by real experimental data — not intuition.</p>
+    </div>
+
+    <div class="filter-bar" id="filter-bar">
+      {categories.map(cat => (
+        <button
+          class={`filter-btn ${cat.id === 'all' ? 'active' : ''}`}
+          data-category={cat.id}
+        >
+          {cat.label}
+        </button>
+      ))}
+    </div>
+
+    <div class="pattern-grid" id="pattern-grid">
+      {sorted.map(pattern => (
+        <a
+          href={`${base}patterns/${pattern.id.replace(/\.mdx?$/, '')}`}
+          class="pattern-card"
+          data-category={pattern.data.category}
+        >
+          <div class="pattern-meta">
+            <span class={`badge badge-${pattern.data.category}`}>
+              {categoryLabel(pattern.data.category)}
+            </span>
+            <span class={`evidence-${pattern.data.evidenceLevel}`} title={`Evidence: ${pattern.data.evidenceLevel}`}>
+              {evidenceIcon(pattern.data.evidenceLevel)}
+            </span>
+          </div>
+          <h3>{pattern.data.title}</h3>
+          <p class="summary">{pattern.data.summary}</p>
+        </a>
+      ))}
+    </div>
+
+    <p style="color:var(--text-muted);font-size:0.85rem;margin-top:2rem;">
+      {sorted.length} pattern{sorted.length !== 1 ? 's' : ''} published
+    </p>
+  </div>
+</Base>
+
+<script>
+  const buttons = document.querySelectorAll<HTMLButtonElement>('.filter-btn');
+  const cards = document.querySelectorAll<HTMLElement>('.pattern-card');
+
+  buttons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      buttons.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const cat = btn.dataset.category;
+      cards.forEach(card => {
+        card.style.display = (cat === 'all' || card.dataset.category === cat) ? '' : 'none';
+      });
+    });
+  });
+</script>

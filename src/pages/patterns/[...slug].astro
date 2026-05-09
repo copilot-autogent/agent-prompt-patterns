@@ -1,0 +1,82 @@
+---
+import { getCollection, render } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+
+export async function getStaticPaths() {
+  const patterns = await getCollection('patterns');
+  return patterns.map(pattern => ({
+    params: { slug: pattern.id.replace(/\.mdx?$/, '') },
+    props: { pattern },
+  }));
+}
+
+const { pattern } = Astro.props;
+const { Content } = await render(pattern);
+
+const base = import.meta.env.BASE_URL;
+
+const categoryLabel = (id: string) => ({
+  'prompt-structure': 'Prompt Structure',
+  'task-design': 'Task Design',
+  'agent-autonomy': 'Agent Autonomy',
+  'feedback-loops': 'Feedback Loops',
+  'multi-agent': 'Multi-Agent',
+}[id] ?? id);
+
+const evidenceLabel = (level: string) => ({
+  strong: '[+++] Strong - replicated empirical data',
+  moderate: '[++-] Moderate - limited but consistent evidence',
+  emerging: '[+--] Emerging - early signal, needs more data',
+}[level] ?? level);
+---
+<Base title={pattern.data.title} description={pattern.data.summary}>
+  <div class="container">
+    <div style="margin: 1.5rem 0 0;">
+      <a href={base} style="color:var(--text-muted);font-size:0.9rem;">&larr; All Patterns</a>
+    </div>
+
+    <div class="pattern-page" style="margin-top:1.5rem;">
+      <div class="pattern-meta">
+        <span class={`badge badge-${pattern.data.category}`}>
+          {categoryLabel(pattern.data.category)}
+        </span>
+        <span class={`evidence-${pattern.data.evidenceLevel}`} style="font-size:0.85rem;">
+          {evidenceLabel(pattern.data.evidenceLevel)}
+        </span>
+      </div>
+
+      <h1>{pattern.data.title}</h1>
+      <p class="lead">{pattern.data.summary}</p>
+
+      <div class="pattern-body">
+        <Content />
+      </div>
+
+      {pattern.data.relatedPatterns.length > 0 && (
+        <div style="margin-top:3rem; padding-top:1.5rem; border-top:1px solid var(--border);">
+          <div class="section-label">Related Patterns</div>
+          <div class="related-list">
+            {pattern.data.relatedPatterns.map((slug: string) => (
+              <a href={`${base}patterns/${slug}`} class="badge badge-prompt-structure" style="font-size:0.85rem;text-transform:none;letter-spacing:0;">
+                {slug.replace(/-/g, ' ')}
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {pattern.data.tags.length > 0 && (
+        <div style="margin-top:1.5rem;">
+          <div class="section-label">Tags</div>
+          <div style="display:flex;flex-wrap:wrap;gap:0.4rem;margin-top:0.5rem;">
+            {pattern.data.tags.map((tag: string) => (
+              <span style="font-family:var(--font-mono);font-size:0.75rem;color:var(--text-muted);background:var(--bg-card);border:1px solid var(--border);padding:0.15em 0.5em;border-radius:4px;">
+                #{tag}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  </div>
+</Base>
