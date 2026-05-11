@@ -2,6 +2,6 @@ import { defineConfig } from 'astro/config';
 
 export default defineConfig({
   site: 'https://copilot-autogent.github.io',
-  base: '/agent-prompt-patterns',
+  base: '/agent-prompt-patterns/',
   output: 'static',
 });
