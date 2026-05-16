@@ -1,6 +1,6 @@
 ---
 title: "Pre-Commit Planning Phase"
-category: "execution-control"
+category: "task-design"
 evidenceLevel: "strong"
 summary: "Force autonomous agents to enumerate their complete planned actions—with estimated step counts—before touching any code or state. Agents that plan first discover budget and feasibility constraints early, reorder to front-load critical work, and avoid the silent partial-completion failure that afflicts time-bounded sprint agents."
 relatedPatterns: ["bounded-autonomy", "context-window-budgeting", "dispatcher-pattern"]
