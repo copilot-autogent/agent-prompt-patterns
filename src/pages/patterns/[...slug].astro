@@ -70,9 +70,9 @@ const evidenceLabel = (level: string) => ({
           <div class="section-label">Tags</div>
           <div style="display:flex;flex-wrap:wrap;gap:0.4rem;margin-top:0.5rem;">
             {pattern.data.tags.map((tag: string) => (
-              <span style="font-family:var(--font-mono);font-size:0.75rem;color:var(--text-muted);background:var(--bg-card);border:1px solid var(--border);padding:0.15em 0.5em;border-radius:4px;">
+              <a href={`${base}?tag=${tag}`} style="font-family:var(--font-mono);font-size:0.75rem;color:var(--text-muted);background:var(--bg-card);border:1px solid var(--border);padding:0.15em 0.5em;border-radius:4px;text-decoration:none;" title={`Browse #${tag} patterns`}>
                 #{tag}
-              </span>
+              </a>
             ))}
           </div>
         </div>

@@ -54,6 +54,7 @@ const base = import.meta.env.BASE_URL;
           href={`${base}patterns/${pattern.id.replace(/\.mdx?$/, '')}`}
           class="pattern-card"
           data-category={pattern.data.category}
+          data-tags={pattern.data.tags.join(',')}
         >
           <div class="pattern-meta">
             <span class={`badge badge-${pattern.data.category}`}>
@@ -79,14 +80,31 @@ const base = import.meta.env.BASE_URL;
   const buttons = document.querySelectorAll<HTMLButtonElement>('.filter-btn');
   const cards = document.querySelectorAll<HTMLElement>('.pattern-card');
 
+  function applyFilter(cat: string, tag?: string) {
+    buttons.forEach(b => {
+      b.classList.toggle('active', b.dataset.category === cat || (cat === 'all' && b.dataset.category === 'all'));
+    });
+    cards.forEach(card => {
+      const catMatch = cat === 'all' || card.dataset.category === cat;
+      const tagMatch = !tag || (card.dataset.tags ?? '').split(',').includes(tag);
+      card.style.display = (catMatch && tagMatch) ? '' : 'none';
+    });
+  }
+
+  // Handle ?tag= URL param on load
+  const params = new URLSearchParams(window.location.search);
+  const tagParam = params.get('tag');
+  if (tagParam) {
+    applyFilter('all', tagParam);
+  }
+
   buttons.forEach(btn => {
     btn.addEventListener('click', () => {
-      buttons.forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      const cat = btn.dataset.category;
-      cards.forEach(card => {
-        card.style.display = (cat === 'all' || card.dataset.category === cat) ? '' : 'none';
-      });
+      // Clear tag param from URL when using category buttons
+      const url = new URL(window.location.href);
+      url.searchParams.delete('tag');
+      history.replaceState({}, '', url);
+      applyFilter(btn.dataset.category ?? 'all');
     });
   });
 </script>
