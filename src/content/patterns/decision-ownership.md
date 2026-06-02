@@ -66,13 +66,13 @@ For any decision:
 
 ## Evidence
 
-**Open thread accumulation (autogent work-pipeline, May 2026)**: A 30-day audit of the work-pipeline memory topic found 14 items in "pending decision" state for > 7 days, all with "awaiting user input" notation. Of those 14: 11 were self-decidable by the agent's own criteria (security PRs, backlog pruning, config defaults). The agent had correctly identified them as decisions but hadn't applied self-decidable classification. After implementing the self-decidable threshold, 11/11 cleared in the next 2 scheduler runs.
+**Open thread accumulation**: A 30-day audit of a shared work tracking system found 14 items in "pending decision" state for > 7 days, all with "awaiting user input" notation. Of those 14: 11 were self-decidable by the agent's own criteria (security PRs, backlog pruning, config defaults). The agent had correctly identified them as decisions but hadn't applied self-decidable classification. After implementing the self-decidable threshold, 11/11 cleared in the next 2 scheduler runs.
 
 **Ask inflation measurement**: In 8 multi-action sessions before the pattern was applied, the average agent-asks-per-session was 3.4 for sessions where the user had given broad approval at the start. After applying "do all of it when given broad approval," the number dropped to 0.8 — a 76% reduction in approval loop friction.
 
 **Auto-decide enforcement**: Items with explicit auto-decide dates (date set at proposal time) had an 89% resolution rate within 5 days. Items without auto-decide dates had a 22% resolution rate in the same window. The auto-decide date was the primary differentiating variable — not the priority or urgency of the item.
 
-**PR review open thread (May 2026)**: Agent ran multi-model code review on a PR and produced findings. Agent ended session with: "Review complete — want me to fix the issues?" Session ended. User saw the review in the next session 3 days later and had to re-read the findings to remember what the issues were. After applying decision ownership: agent creates a fix commit for must-fix findings immediately after review without asking, and reports what was fixed.
+**PR review open thread**: Agent ran multi-model code review on a PR and produced findings. Agent ended session with: "Review complete — want me to fix the issues?" Session ended. User saw the review in the next session 3 days later and had to re-read the findings to remember what the issues were. After applying decision ownership: agent creates a fix commit for must-fix findings immediately after review without asking, and reports what was fixed.
 
 ## Tradeoffs
 

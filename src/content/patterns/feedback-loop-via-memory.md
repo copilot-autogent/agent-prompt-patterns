@@ -11,7 +11,7 @@ tags: ["memory", "feedback", "sprint", "manifest", "recurring-tasks", "product-o
 
 You have a recurring agent — a sprint runner, a weekly researcher, a content generator. It runs autonomously and produces real work. But it operates entirely on its own backlog. It optimizes for _completing backlog items_ rather than _delivering value_.
 
-You notice issues: the agent is building features nobody asked for, or missing the one thing that actually matters this week. You try leaving feedback in a Discord message. The agent sees it in the current session but forgets it by next sprint. The feedback loop is broken.
+You notice issues: the agent is building features nobody asked for, or missing the one thing that actually matters this week. You try leaving feedback in a chat message. The agent sees it in the current session but forgets it by next sprint. The feedback loop is broken.
 
 The root cause: agents have no durable channel to receive direction between sessions.
 
