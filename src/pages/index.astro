@@ -77,34 +77,37 @@ const base = import.meta.env.BASE_URL;
 </Base>
 
 <script>
-  const buttons = document.querySelectorAll<HTMLButtonElement>('.filter-btn');
-  const cards = document.querySelectorAll<HTMLElement>('.pattern-card');
+  // Wait for DOM to be fully loaded before querying elements
+  document.addEventListener('DOMContentLoaded', () => {
+    const buttons = document.querySelectorAll<HTMLButtonElement>('.filter-btn');
+    const cards = document.querySelectorAll<HTMLElement>('.pattern-card');
 
-  function applyFilter(cat: string, tag?: string) {
-    buttons.forEach(b => {
-      b.classList.toggle('active', b.dataset.category === cat || (cat === 'all' && b.dataset.category === 'all'));
-    });
-    cards.forEach(card => {
-      const catMatch = cat === 'all' || card.dataset.category === cat;
-      const tagMatch = !tag || (card.dataset.tags ?? '').split(',').includes(tag);
-      card.style.display = (catMatch && tagMatch) ? '' : 'none';
-    });
-  }
+    function applyFilter(cat: string, tag?: string) {
+      buttons.forEach(b => {
+        b.classList.toggle('active', b.dataset.category === cat || (cat === 'all' && b.dataset.category === 'all'));
+      });
+      cards.forEach(card => {
+        const catMatch = cat === 'all' || card.dataset.category === cat;
+        const tagMatch = !tag || (card.dataset.tags ?? '').split(',').includes(tag);
+        card.style.display = (catMatch && tagMatch) ? '' : 'none';
+      });
+    }
 
-  // Handle ?tag= URL param on load
-  const params = new URLSearchParams(window.location.search);
-  const tagParam = params.get('tag');
-  if (tagParam) {
-    applyFilter('all', tagParam);
-  }
+    // Handle ?tag= URL param on load
+    const params = new URLSearchParams(window.location.search);
+    const tagParam = params.get('tag');
+    if (tagParam) {
+      applyFilter('all', tagParam);
+    }
 
-  buttons.forEach(btn => {
-    btn.addEventListener('click', () => {
-      // Clear tag param from URL when using category buttons
-      const url = new URL(window.location.href);
-      url.searchParams.delete('tag');
-      history.replaceState({}, '', url);
-      applyFilter(btn.dataset.category ?? 'all');
+    buttons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        // Clear tag param from URL when using category buttons
+        const url = new URL(window.location.href);
+        url.searchParams.delete('tag');
+        history.replaceState({}, '', url);
+        applyFilter(btn.dataset.category ?? 'all');
+      });
     });
   });
 </script>
