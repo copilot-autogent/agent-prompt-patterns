@@ -77,8 +77,9 @@ const base = import.meta.env.BASE_URL;
 </Base>
 
 <script>
-  // Wait for DOM to be fully loaded before querying elements
-  document.addEventListener('DOMContentLoaded', () => {
+  // Astro compiles this as type="module" (deferred). DOM is ready when module scripts run.
+  // Use astro:page-load to support View Transitions client-side navigation.
+  function initializeFilter() {
     const buttons = document.querySelectorAll<HTMLButtonElement>('.filter-btn');
     const cards = document.querySelectorAll<HTMLElement>('.pattern-card');
 
@@ -109,5 +110,11 @@ const base = import.meta.env.BASE_URL;
         applyFilter(btn.dataset.category ?? 'all');
       });
     });
-  });
+  }
+
+  // Initialize on first load (module scripts run after DOM is ready)
+  initializeFilter();
+
+  // Re-initialize on client-side navigation (View Transitions)
+  document.addEventListener('astro:page-load', initializeFilter);
 </script>
