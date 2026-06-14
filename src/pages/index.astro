@@ -78,8 +78,15 @@ const base = import.meta.env.BASE_URL;
 
 <script>
   // Astro compiles this as type="module" (deferred). DOM is ready when module scripts run.
-  // Use astro:page-load to support View Transitions client-side navigation.
+  // astro:page-load fires on initial load AND every client-side navigation (View Transitions).
+  let controller: AbortController | null = null;
+
   function initializeFilter() {
+    // Abort any listeners from a previous navigation to prevent handler stacking
+    controller?.abort();
+    controller = new AbortController();
+    const { signal } = controller;
+
     const buttons = document.querySelectorAll<HTMLButtonElement>('.filter-btn');
     const cards = document.querySelectorAll<HTMLElement>('.pattern-card');
 
@@ -108,13 +115,10 @@ const base = import.meta.env.BASE_URL;
         url.searchParams.delete('tag');
         history.replaceState({}, '', url);
         applyFilter(btn.dataset.category ?? 'all');
-      });
+      }, { signal });
     });
   }
 
-  // Initialize on first load (module scripts run after DOM is ready)
-  initializeFilter();
-
-  // Re-initialize on client-side navigation (View Transitions)
+  // Rely solely on astro:page-load — it fires on initial load AND every subsequent navigation
   document.addEventListener('astro:page-load', initializeFilter);
 </script>
