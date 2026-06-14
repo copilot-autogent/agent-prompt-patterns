@@ -1,7 +1,7 @@
 ---
 title: "Transcript Mining Discipline"
 category: "feedback-loops"
-evidenceLevel: "low"
+evidenceLevel: "emerging"
 summary: "Agents running recurring sessions encounter the same failures repeatedly because they don't systematically review their own transcripts. Schedule periodic retrospectives that mine session logs for repeated errors, forgotten steps, and rediscovered workarounds — converting implicit learning into explicit patterns and checklists."
 relatedPatterns: ["empirical-validation-loop", "feedback-loop-via-memory", "side-effect-verification"]
 tags: ["feedback-loops", "learning", "retrospective", "pattern-discovery", "self-improvement", "transcripts"]
