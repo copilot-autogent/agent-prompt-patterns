@@ -1,7 +1,7 @@
 ---
 title: "Transcript Mining Discipline"
 category: "feedback-loops"
-evidenceLevel: "moderate"
+evidenceLevel: "low"
 summary: "Agents running recurring sessions encounter the same failures repeatedly because they don't systematically review their own transcripts. Schedule periodic retrospectives that mine session logs for repeated errors, forgotten steps, and rediscovered workarounds — converting implicit learning into explicit patterns and checklists."
 relatedPatterns: ["empirical-validation-loop", "feedback-loop-via-memory", "side-effect-verification"]
 tags: ["feedback-loops", "learning", "retrospective", "pattern-discovery", "self-improvement", "transcripts"]
@@ -122,10 +122,11 @@ Output format:
 - **Retrospective timing**: Too frequent (every 2 sessions) and patterns haven't had time to repeat. Too infrequent (every 20 sessions) and learning is delayed too long. N=5-10 is the sweet spot.
 - **Signal vs noise**: Not every error is worth documenting. Filter for problems that appear 2+ times or have high impact. A unique one-off error isn't a pattern.
 - **Action items without owners**: The retrospective identifies 5 patterns but no one acts on them → wasted effort. Every finding needs a concrete next step (add to checklist, file pattern issue, update docs).
+- **Security and privacy**: Transcripts may contain secrets, tokens, API keys, or PII captured in tool outputs or error messages. Scrub credentials and sensitive data before storing transcript excerpts in checklists or memory.
 - **Transcript bloat**: If transcripts are very verbose, the retrospective agent may spend all its time reading and little time analyzing. Prune transcripts to essential interactions or provide structured summaries.
 
 ## Related Patterns
 
-- **[Empirical Validation Loop](/agent-prompt-patterns/patterns/empirical-validation-loop)** — retrospectives feed back into the validation loop by identifying experiments to run
-- **[Feedback Loop via Memory](/agent-prompt-patterns/patterns/feedback-loop-via-memory)** — retrospective findings get persisted to memory so future sessions access them
-- **[Side-Effect Verification](/agent-prompt-patterns/patterns/side-effect-verification)** — retrospectives often reveal silent failures that should have been verified
+- **[Empirical Validation Loop](../empirical-validation-loop)** — retrospectives feed back into the validation loop by identifying experiments to run
+- **[Feedback Loop via Memory](../feedback-loop-via-memory)** — retrospective findings get persisted to memory so future sessions access them
+- **[Side-Effect Verification](../side-effect-verification)** — retrospectives often reveal silent failures that should have been verified
