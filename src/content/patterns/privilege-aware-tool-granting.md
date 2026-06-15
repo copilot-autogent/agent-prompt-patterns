@@ -14,7 +14,7 @@ AI agents are granted broad toolsets by default — every session receives the f
 When a security incident occurs — prompt injection, social engineering, authorization bypass — the agent has **maximum blast radius** because it had access to tools it never needed for the task at hand.
 
 **Empirical anchor (Meta Instagram breach, June 2026):**  
-An AI chatbot with delegated password-reset authority was social-engineered into sending reset codes to attacker accounts — 20,225 accounts compromised over 7 weeks. The vulnerability was not in the model's reasoning; it was in the permission grant. The chatbot had authority beyond what its security controls could protect. Root cause, per incident review: *"The vulnerability was in the permissions, not the prompt."*
+An AI chatbot with delegated password-reset authority was social-engineered into sending reset codes to attacker accounts — 20,225 accounts compromised over 7 weeks. The vulnerability was not in the model's reasoning; it was in the permission grant. The chatbot had authority beyond what its security controls could protect. Root cause analysis: the chatbot's model reasoning was not at fault — it was following its instructions correctly. The failure was in what it was authorized to do. The vulnerability was in the permissions, not the prompt.
 
 **Industry signal — OpenAI Lockdown Mode (June 2026):**  
 OpenAI shipped a "Lockdown Mode" feature that disables web access, file uploads, and plugins when handling sensitive data. The design decision is a direct acknowledgment: defense-in-depth at the tool layer, not at the model layer. Restricting tool access reduces exposure even when the model is compromised.
@@ -112,7 +112,8 @@ This pattern is classified **emerging** — principle is validated by security i
 **Incident data supporting the principle:**
 - Meta Instagram breach (June 2026): 20,225 accounts; root cause was excessive tool authority, not model failure
 - OpenAI Lockdown Mode launch (June 2026): industry acknowledgment that tool-layer restriction is necessary defense
-- OWASP AI Security Top 10 (2025): ASI-03 Excessive Agency, ASI-05 Tool Use Safety — both recommend minimum-permission tool grants
+- OWASP LLM Top 10 (2025): LLM06:2025 Excessive Agency — "agents should operate with minimal permissions necessary"
+- OWASP Agentic Top 10 (2025): ASI03 Identity & Privilege Abuse — restrict delegated authority to the minimum needed for each session
 
 **Validation roadmap (to upgrade to `moderate`):**
 1. Implement `session.tools.allowed` + enforcement in at least one production framework
@@ -129,9 +130,10 @@ This pattern is classified **emerging** — principle is validated by security i
 **Watch out for:**
 - **Allow-list amnesia**: A tool the task legitimately needs gets omitted. The agent fails mid-session. Mitigation: derive the allow-list from the task spec during session design, not after an incident.
 - **Variant A applied too broadly**: Strict allow-lists on exploratory sessions produce constant friction. Match the variant to the risk level.
-- **Advisory-only enforcement**: Putting the restriction in the system prompt without runtime enforcement gives a false sense of security. An injected payload can override a prompted instruction; it cannot override a hard runtime check.
+- **Advisory-only enforcement**: Putting the restriction in the system prompt without runtime enforcement gives a false sense of security. An injected payload can override a prompted instruction; it *should not be able to* override a correctly implemented runtime check — but only if the tool dispatch layer itself is secure, correctly implemented, and free of logic bugs or race conditions.
 - **Tier creep**: Sessions progressively get granted higher tiers "just in case." Audit tier grants the same way you audit `sudo` grants.
-- **Injection via allowed tools**: Even restricted sessions can be abused if the allowed tools themselves have side effects. `recall_memory` + `save_memory` can be exploited to poison future sessions. Think about what each allowed tool can *indirectly* do.
+- **Dispatch layer as attack surface**: The entire security model depends on the tool dispatch layer being correctly implemented and uncompromised. Vulnerabilities in dispatch logic (TOCTOU races, parsing bugs, authorization bypasses) can defeat all restrictions. The dispatch layer must be security-reviewed and monitored as a high-value target.
+- **Injection via allowed tools**: Even restricted sessions can be abused if the allowed tools accept dangerous parameters or have side effects. `recall_memory` + `save_memory` can poison future sessions; path traversal in file-read tools can leak secrets; `sql_query` can be exploited via injected SQL if parameters are not validated; `bash` is susceptible to command injection if arguments are unsanitized. Tool-level allow-listing is necessary but not sufficient — parameter validation is critical.
 
 ## Related Patterns
 
