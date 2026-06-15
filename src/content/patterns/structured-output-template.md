@@ -3,7 +3,7 @@ title: "Structured Output Template"
 category: "task-design"
 evidenceLevel: "moderate"
 summary: "Recurring agent tasks that produce prose output exhibit format drift across runs — sometimes a table, sometimes bullets, sometimes flowing narrative. Include an explicit output template in the prompt. Show the exact structure the agent should follow. Format locks in; outputs become scannable and comparable across runs."
-relatedPatterns: ["explicit-skip-permission", "sprint-continuity", "context-window-budgeting"]
+relatedPatterns: ["explicit-skip-permission", "sprint-continuity", "context-window-budgeting", "circuit-breaker"]
 tags: ["scheduling", "recurring-agents", "output-format", "template", "format-drift", "digests", "surveys", "summaries", "prompt-design", "task-design"]
 ---
 
@@ -130,3 +130,4 @@ Evidence level `moderate` — replicated across 2 independent task types, each w
 - **[Explicit Skip Permission](/agent-prompt-patterns/patterns/explicit-skip-permission)** — handles the no-output case; combine with a template to cover both the "nothing to report" and "something to report" branches
 - **[Sprint Continuity](/agent-prompt-patterns/patterns/sprint-continuity)** — a sprint handoff manifest is a specialized output template applied to multi-session state; the same principle at a larger scope
 - **[Context Window Budgeting](/agent-prompt-patterns/patterns/context-window-budgeting)** — templates add prompt overhead; budget for them explicitly in long-running sessions
+- **[Circuit Breaker](/agent-prompt-patterns/patterns/circuit-breaker)** — append a `[QUALITY: N]` terminal token to your output template to give the circuit breaker a parseable signal without restructuring the output
