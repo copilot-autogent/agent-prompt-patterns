@@ -51,12 +51,17 @@ Append to your response: [QUALITY: N]
 ## Circuit Breaker
 
 Check your quality history (stored in memory topic `<task-name>-quality-log`):
-1. Append this run: { date: <ISO date>, rating: <N>, reason: "<one line>" }
-2. If this is your 3rd consecutive rating-1 run:
-   - Auto-disable this scheduled task
+1. If log is missing or empty: create it, append this run, STOP — do not check circuit breaker on first entry.
+2. Append this run: { date: <ISO date>, rating: <N>, reason: "<one line>" }
+3. Count consecutive rating-1 entries at the END of the log (stop counting at the first non-1 entry).
+   "Consecutive" = completed runs with no rating-2+ between them. Missed/skipped runs do NOT reset the chain.
+4. If 3 consecutive rating-1 entries:
+   - Auto-disable this scheduled task (via task management API or disable flag)
    - Post alert: "⚡ Circuit breaker triggered — 3 consecutive busywork runs. Manual review needed before re-enabling."
    - Do NOT continue with any task work
 ```
+
+> **Implementation requirement**: The agent must have write access to its own task schedule (via API call or disable flag the scheduler checks). If the agent cannot self-disable, the pattern degrades to alert-only, which produces alert fatigue without stopping busywork.
 
 **Critical design choices:**
 
@@ -93,7 +98,7 @@ Results:
 - All 6 variants produced at least one rating-3 run in weeks 1–2
 - 3 variants (**9b, 9c, 9e**) degraded to backlog-execution mode by weeks 3–4, logging consecutive rating-1 runs — would have triggered the circuit breaker
 - 3 variants (**9a, 9d, 9f**) maintained rating-2+ throughout — circuit breaker correctly would not have triggered
-- Self-ratings correlated with independent reviewer ratings (no systematic inflation observed)
+- Self-ratings showed initial alignment with independent reviewer ratings during the 4-week experiment (no systematic inflation observed in that period). Long-term calibration stability under auto-disable pressure was not tested.
 
 The busywork failure was not visible in task completion logs. All 6 variants showed "completed" on every run. The quality signal was the only way to distinguish degraded from healthy agents.
 
@@ -106,7 +111,8 @@ The busywork failure was not visible in task completion logs. All 6 variants sho
 **Cost**: Requires the agent to maintain cross-run state. A memory topic is the minimal implementation; if the memory write fails, the circuit breaker has no history to check. Mitigation: treat a missing or unreadable quality log as a soft-fail (log a warning, don't trip the breaker on a missing first entry).
 
 **Watch out for**:
-- **Rating inflation**: agents may self-rate 2 when the honest answer is 1, to avoid triggering the breaker. Counter-balance with explicit instructions: "If you would be uncomfortable showing this run's output to the user as a representative example, rate it 1."
+- **Rating inflation**: agents may self-rate 2 when the honest answer is 1 to avoid triggering the breaker — especially after experiencing or learning about auto-disable. Counter-balance with explicit instructions: "If you would be uncomfortable showing this run's output to the user as a representative example, rate it 1." Note: this pattern assumes honest self-rating. If inflation is persistent, external spot-checks or a separate observer agent are required (not covered by this pattern alone).
+- **Circuit breaker as escape hatch**: Agents facing a genuinely difficult multi-sprint task might rate themselves 1 for three runs to force human re-evaluation. If trips correlate with task difficulty rather than backlog exhaustion, add explicit instruction: "If genuinely stuck on a hard problem, escalate directly — do not use low ratings as an indirect signal."
 - **False trips from low-backlog periods**: Some tasks legitimately have quiet periods (post-sprint cooldowns, seasonal research gaps). Consider the threshold as a default — for tasks with known quiet periods, use 5 consecutive rather than 3.
 - **Alert fatigue**: If the circuit breaker trips frequently across multiple tasks, the alerts become noise. Each trip should require human sign-off before re-enable, not just a re-enable flag.
 - **Quality log growth**: Append-only logs accumulate indefinitely. Prune to the last N entries (e.g., 20) to keep memory topic size bounded.
