@@ -15,7 +15,7 @@ Three weeks later, the same items appear in every standup summary. The observer 
 
 The root cause: **observation is only half the loop**. An agent that detects issues but never resolves them is a backlog generator. Each run adds to the pile without clearing it. Over time, the backlog becomes so large that no one trusts it, and the observation agent itself becomes noise.
 
-A secondary failure: teams route findings to a human inbox ("standup posted to #dev"). The human is expected to be the resolver. When the human is busy, findings pile up. The explicit resolver contract disappears into "someone should handle this."
+A secondary failure: teams route findings to a human inbox ("standup posted to a shared channel"). The human is expected to be the resolver. When the human is busy, findings pile up. The explicit resolver contract disappears into "someone should handle this."
 
 ## Context
 

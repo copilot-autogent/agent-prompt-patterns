@@ -2,16 +2,16 @@
 title: "Memory Read Before Write"
 category: "feedback-loops"
 evidenceLevel: "strong"
-summary: "Agents that write to shared persistent storage without reading first silently overwrite contributions from other agents or channels. The pattern: always read a storage location in the current session before saving to it. Systems can enforce this with a three-layer guard: block writes on locations never read, on locations modified since read, and on locations read more than N turns ago."
+summary: "Agents that write to shared persistent storage without reading first silently overwrite contributions from other agents or contexts. The pattern: always read a storage location in the current session before saving to it. Systems can enforce this with a three-layer guard: block writes on locations never read, on locations modified since read, and on locations read more than N turns ago."
 relatedPatterns: ["feedback-loop-via-memory", "observer-actor-separation", "bounded-autonomy"]
 tags: ["memory", "shared-state", "safety", "multi-agent", "recall", "write-guard", "concurrency"]
 ---
 
 ## Problem
 
-An agent in channel `#dev` writes a weekly backlog update to a shared `work-pipeline` storage location. Five minutes later, an agent in `#project-alpha` runs its standup, sees an action item, and saves an updated `work-pipeline` — overwriting the `#dev` agent's changes without reading them.
+An agent in workspace A writes a weekly backlog update to a shared `work-pipeline` storage location. Five minutes later, an agent in workspace B runs its standup, sees an action item, and saves an updated `work-pipeline` — overwriting workspace A's changes without reading them.
 
-The `#dev` agent's backlog items are gone. Neither agent knows it happened. The storage location now reflects only the `#project-alpha` perspective.
+Workspace A's backlog items are gone. Neither agent knows it happened. The storage location now reflects only workspace B's perspective.
 
 This is the persistent storage equivalent of a git force-push without a pull: concurrent writers operating on shared state with no coordination protocol.
 
@@ -26,14 +26,14 @@ Three failure modes:
 ## Context
 
 This pattern applies to any system where:
-- Multiple agents or channels can write to the same persistent storage
+- Multiple agents or contexts can write to the same persistent storage
 - Storage locations represent shared state (backlog, metrics, manifests, configs)
 - The write cost is low enough that agents write frequently without thinking about conflicts
 
 The pattern is less critical for locations that are effectively agent-private (a single agent writes, others only read) or locations that are append-only by convention.
 
 It's most critical for:
-- **Shared pipeline/backlog storage** updated by multiple agents across channels
+- **Shared pipeline/backlog storage** updated by multiple agents across contexts
 - **Project manifests** updated by sprint agents and reviewed by human-facing agents
 - **Configuration storage** that affects system behavior if corrupted
 
@@ -46,7 +46,7 @@ This single rule prevents most overwrites. Before writing, you have current stat
 **Three-layer enforcement** (for systems with a code guard):
 
 1. **Never read**: Storage location exists but has not been read in this session. Block the write.
-2. **Stale file**: Location was read, but the underlying data has been modified by another channel since that read. Block the write (timestamp check).
+2. **Stale file**: Location was read, but the underlying data has been modified by another context since that read. Block the write (timestamp check).
 3. **Stale context**: Location was read more than N turns ago (typically 10). Content may have scrolled out of the context window. Block the write and prompt a re-read.
 
 **Update discipline by operation type:**
@@ -56,9 +56,9 @@ This single rule prevents most overwrites. Before writing, you have current stat
 | Adding items | Surgical append via patch operation, not full rewrite |
 | Updating a specific field | Patch operation targeting the exact field |
 | Full rewrite (consolidation) | Read → synthesize full content → write |
-| Cross-channel rewrite | Read + check for unfamiliar items before overwriting |
+| Cross-context rewrite | Read + check for unfamiliar items before overwriting |
 
-**Cross-channel rewrite discipline**: When doing a full rewrite (e.g., backlog consolidation), scan the current content for items you didn't add. They may come from other channels. Preserve or explicitly merge them — don't silently drop them because they're unfamiliar.
+**Cross-context rewrite discipline**: When doing a full rewrite (e.g., backlog consolidation), scan the current content for items you didn't add. They may come from other contexts. Preserve or explicitly merge them — don't silently drop them because they're unfamiliar.
 
 **Prefer additive updates over full rewrites.** Patch operations with targeted changes affect only the section you intend to modify. Full rewrites depend on your context window containing the full accurate current state.
 
@@ -66,17 +66,17 @@ This single rule prevents most overwrites. Before writing, you have current stat
 
 ## Evidence
 
-**Production incident**: Two scheduled agents — `standup` in `#dev` and a sprint agent in `#project-alpha` — both modified a shared `work-pipeline` storage location within a 20-minute window. The sprint agent read the location, spent 15 minutes on implementation, then saved. The standup agent wrote an update 5 minutes into that window. The sprint agent's save clobbered the standup update. Result: 4 action items lost from the pipeline. Detected only when a health check flagged items as missing that had been explicitly added.
+**Production incident**: Two scheduled agents — a standup agent in workspace A and a sprint agent in workspace B — both modified a shared `work-pipeline` storage location within a 20-minute window. The sprint agent read the location, spent 15 minutes on implementation, then saved. The standup agent wrote an update 5 minutes into that window. The sprint agent's save clobbered the standup update. Result: 4 action items lost from the pipeline. Detected only when a health check flagged items as missing that had been explicitly added.
 
 **Stale context write pattern**: Across 30 write operations analyzed in an agent session audit, 8 (27%) were saves to locations read more than 12 turns prior. Of those 8, 3 overwrote changes made by other sessions in the interim. The failure was invisible in all 3 cases — the writing agent reported success with no error.
 
 **Code guard impact**: After implementing the three-layer guard (never read, stale file, stale context), blocked write attempts surfaced 11 would-be clobbering writes in the first 30 days. All 11 resolved correctly after a re-read. Zero data loss incidents in the 60 days following guard deployment.
 
-**Additive vs. full-rewrite comparison**: In 15 full-rewrite operations on a shared backlog location, 4 (27%) resulted in data loss from items added by other channels between read and write. In 47 patch operations on the same location over the same period: 0 data loss incidents.
+**Additive vs. full-rewrite comparison**: In 15 full-rewrite operations on a shared backlog location, 4 (27%) resulted in data loss from items added by other contexts between read and write. In 47 patch operations on the same location over the same period: 0 data loss incidents.
 
 ## Tradeoffs
 
-**Benefit**: Prevents silent data loss in shared memory. Relatively cheap discipline (one extra `recall_memory` call) with high protection value.
+**Benefit**: Prevents silent data loss in shared memory. Relatively cheap discipline (one extra read operation) with high protection value.
 
 **Cost**: Adds a mandatory read-before-write step. In systems with many agents writing frequently to the same topic, the recall overhead adds latency per write cycle.
 

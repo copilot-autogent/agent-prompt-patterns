@@ -65,8 +65,6 @@ schedule a follow-up agent with:
 
 ## Evidence
 
-## Evidence
-
 **Zero vs. 100% completion rate**: Across 15 measured sessions in a production agent deployment, "will do X next session" statements with no scheduled trigger had a **0% completion rate** over a 2-week observation window. The same items with a scheduled follow-up agent had a **100% completion rate**. The single variable: whether a trigger artifact was created at time of identification.
 
 **Standup failure pattern**: Standup agent posted daily summaries identifying 3–5 items to handle "today." The standup is a session-mode agent — it ends after posting. No follow-up agents were created. Across 6 consecutive standups, 0 of 14 identified items were addressed within their stated timeframe. After updating the standup instructions to include a step creating follow-up agents for each actionable item: 100% of actionable items from the next 5 standups were addressed within 2 hours of standup posting.
@@ -85,7 +83,7 @@ schedule a follow-up agent with:
 - Agent explosion: aggressive scheduling of every minor item creates a queue of low-value agents that compete for session capacity. Apply priority filtering — only schedule items that would be meaningful to complete, not everything identified.
 - Instruction atrophy: agents created quickly at session end often have thin instructions. The scheduled agent then fails. Invest in instruction quality at creation time, or build a structured template for common agent types.
 - False scheduling comfort: creating an agent doesn't guarantee quality execution — only that the agent fires. An agent with poor instructions and wrong routing "completes" without producing value. The trigger is necessary but not sufficient.
-- Routing confusion: an agent scheduled from one channel defaults to posting results in that channel. If the work belongs elsewhere, set routing explicitly at creation time. Cross-channel routing must be explicit.
+- Routing confusion: an agent scheduled from one context defaults to posting results in that context. If the work belongs elsewhere, set routing explicitly at creation time. Cross-context routing must be explicit.
 
 ## Related Patterns
 

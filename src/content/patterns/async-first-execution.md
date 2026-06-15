@@ -2,7 +2,7 @@
 title: "Async-First Execution"
 category: "task-design"
 evidenceLevel: "strong"
-summary: "Agents default to doing all work inline — synchronously, in the current session — even when tasks are large, deferred, or belong in a different channel. This blocks interaction, inflates context, and loses cross-channel work. A four-row dispatch matrix routes every task to the right execution mechanism: inline, sub-agent, once-task, or cross-channel once-task."
+summary: "Agents default to doing all work inline — synchronously, in the current session — even when tasks are large, deferred, or belong in a different context. This blocks interaction, inflates context, and loses cross-context work. A four-row dispatch matrix routes every task to the right execution mechanism: inline, sub-agent, once-task, or cross-context once-task."
 relatedPatterns: ["async-first-decision-tree", "staggered-task-spawning", "sprint-continuity", "dispatcher-pattern"]
 tags: ["async", "dispatch", "scheduling", "task-routing", "channels", "context-management", "execution"]
 ---
@@ -13,7 +13,7 @@ An agent identifies work to do. It begins doing it inline: reading files, making
 
 Three failure modes emerge:
 
-**Wrong channel**: Work spawned via a sub-agent or inline execution in channel `#dev` posts results back to `#dev`. But the work belongs to a side project living in `#project-alpha`. The user sees results in the wrong place and the project agent never knows the work happened.
+**Wrong context**: Work spawned via a sub-agent or inline execution in workspace A posts results back to workspace A. But the work belongs to a side project living in workspace B. The user sees results in the wrong place and the project agent never knows the work happened.
 
 **Session expiry**: Long-running work (builds, multi-file refactors, research sweeps) consumes context and hits session timeouts. In one documented case, a PR was created at second 1797 of a 1800-second budget. Three seconds later and the entire sprint's work would have been lost with no recoverable artifact.
 
@@ -24,7 +24,7 @@ Three failure modes emerge:
 This pattern is a concrete routing guide for agents with access to three execution primitives:
 - **Inline execution** — work done in the current session
 - **`task` sub-agent** — lightweight parallel investigation; returns result to current session
-- **Scheduled `once` task** — fires at a specific time in its own fresh session; can target a specific output channel
+- **Scheduled once-task** — fires at a specific time in its own fresh session; can target a specific output context
 
 Apply this pattern whenever you're about to begin non-trivial work inside a current session.
 
@@ -36,12 +36,12 @@ Apply this pattern whenever you're about to begin non-trivial work inside a curr
 |-----------|-----------|-----|
 | Need result immediately to continue conversation | Inline or `task` sub-agent | Must be in current context |
 | Implementation work starting now | `task` sub-agent | Full tools, clean context; posts completion |
-| Deferred work / fires at a specific time | `once` scheduled task | Concrete trigger; not dependent on user message |
-| Cross-channel work | `once` task with target `output_channel_id` | Sub-agent threads land in current channel only |
+| Deferred work / fires at a specific time | Scheduled once-task | Concrete trigger; not dependent on user message |
+| Cross-context work | Scheduled once-task with explicit output routing | Sub-agent threads land in current context only |
 
-**Key difference between sub-agent and `once` task:**
+**Key difference between sub-agent and scheduled once-task:**
 - Sub-agent: starts immediately, notifies current session on completion
-- `once` task: starts at a specified time, independent session, routes to a target channel
+- Scheduled once-task: starts at a specified time, independent session, routes to a target context
 
 **Dispatch prompt quality is load-bearing.** Each dispatched agent starts with zero context. The prompt IS the context. Include:
 - What to do and why
@@ -61,9 +61,9 @@ Under-specified dispatch prompts produce agents that duplicate investigation alr
 
 **Session timeout prevention**: An autonomous agent system running sprints with 1800-second budgets consistently hit the limit when doing investigation + implementation + verification inline. After switching to "create PR as soon as tests pass, then run review async," timeout rate dropped from 3/5 sprints to 0/3 in the following cycle. The critical PR was created at second 1797 of 1800 — the pattern was introduced one sprint before catastrophic failure.
 
-**Cross-channel routing failure**: A sprint agent working in `#dev` was dispatched via `spawn_task` to handle a side-project task targeting `#project-alpha`. Results posted to `#dev`, never visible in `#project-alpha`. The project agent in `#project-alpha` had no record of the work having happened. Fix: `once` scheduled task with explicit `output_channel_id` set to the project channel.
+**Cross-context routing failure**: A sprint agent working in workspace A was dispatched via a sub-agent call to handle a side-project task targeting workspace B. Results posted to workspace A, never visible in workspace B. The project agent in workspace B had no record of the work having happened. Fix: a scheduled once-task with explicit output routing set to the target workspace.
 
-**Promise leakage tracking**: Across 15 measured sessions, "will do X next session" statements with no scheduled trigger had a **0% completion rate**. The same items with a scheduled `once` task trigger had a **100% completion rate**. The act of scheduling — converting intent into a concrete trigger — was the sole differentiating factor.
+**Promise leakage tracking**: Across 15 measured sessions, "will do X next session" statements with no scheduled trigger had a **0% completion rate**. The same items with a scheduled follow-up trigger had a **100% completion rate**. The act of scheduling — converting intent into a concrete trigger — was the sole differentiating factor.
 
 **Parallel dispatch throughput**: A workflow processing one action per session (deferring others for "next session") took 11 days to clear a 23-item backlog. After switching to dispatch-all-ready-items per session with staggered timing, the same backlog cleared in 4 days with no increase in error rate.
 
@@ -73,13 +73,13 @@ Under-specified dispatch prompts produce agents that duplicate investigation alr
 
 **Context vs. cohesion**: Dispatched agents lose the accumulated context of the main session. More explicit, verbose prompts are required. Under-investing in prompt quality produces agents that redo investigation already done inline.
 
-**Task explosion management**: Dispatching all ready items per turn can generate 10+ simultaneous agents. For > 5 items, prefer a single "batch worker" `once` task with a prioritized list over N separate agents. Stagger spawn times by 5 minutes to avoid concurrent session cap limits.
+**Task explosion management**: Dispatching all ready items per turn can generate 10+ simultaneous agents. For > 5 items, prefer a single "batch worker" once-task with a prioritized list over N separate agents. Stagger spawn times by 5 minutes to avoid concurrent session cap limits.
 
-**Notification overhead**: Aggressive dispatch generates more threads and notifications. Without a clear completion protocol, these accumulate and create their own noise. Apply staggered spawning and route results to appropriate channels to keep signal-to-noise high.
+**Notification overhead**: Aggressive dispatch generates more threads and notifications. Without a clear completion protocol, these accumulate and create their own noise. Apply staggered spawning and route results to appropriate contexts to keep signal-to-noise high.
 
 ## Related Patterns
 
-- **[Async-First Decision Tree](/agent-prompt-patterns/patterns/async-first-decision-tree)** — a complementary pattern covering the Q1/Q2/Q3 routing decision logic; this pattern focuses on the routing matrix and channel-targeting mechanics
+- **[Async-First Decision Tree](/agent-prompt-patterns/patterns/async-first-decision-tree)** — a complementary pattern covering the Q1/Q2/Q3 routing decision logic; this pattern focuses on the routing matrix and context-targeting mechanics
 - **[Staggered Task Spawning](/agent-prompt-patterns/patterns/staggered-task-spawning)** — how to space concurrent dispatches to avoid session cap collisions
 - **[Sprint Continuity](/agent-prompt-patterns/patterns/sprint-continuity)** — how to preserve sprint work artifacts when sessions time out during long-running execution
 - **[Dispatcher Pattern](/agent-prompt-patterns/patterns/dispatcher-pattern)** — the general pattern for routing decisions to actor agents
