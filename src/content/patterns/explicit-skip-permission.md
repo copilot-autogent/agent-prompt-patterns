@@ -80,11 +80,11 @@ Original prompt: "recall all memory topics and update anything relevant." After 
 
 After adding explicit skip permission: format stabilized immediately. Zero manufactured updates across 6+ subsequent runs. No-op runs consistently produced `no-update`.
 
-**Session 2 — `daily-academic-survey` task:**
+**Session 2 — `daily-academic-survey` task (supporting, confounded):**
 
-Paired with a dedup instruction (skip papers already in the digest). After 3+ runs with explicit skip permission, the task reliably produced `no-update` on days with no new relevant papers rather than surfacing already-seen content reworded.
+Paired simultaneously with a dedup instruction (skip papers already in the digest) and skip permission. After 3+ runs, the task reliably produced `no-update` on days with no new relevant papers. Note: because both changes were introduced together, the effect cannot be attributed to skip permission alone — the dedup instruction addresses a related but distinct symptom (already-seen content) and may have been sufficient by itself.
 
-Evidence level `moderate`: replicated across 2 independent recurring tasks; consistent across 6+ runs each after the fix.
+Evidence level `moderate`: Session 1 alone demonstrates the mechanism cleanly — 3 runs showing manufactured output, 6+ runs post-fix with zero manufactured updates. Session 2 is consistent supporting evidence but not independent replication due to the simultaneous change.
 
 ## Tradeoffs
 
