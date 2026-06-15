@@ -30,7 +30,7 @@ Every pattern must follow this structure:
 ---
 title: "Pattern Name"
 category: "category-name"
-evidenceLevel: "strong"
+evidenceLevel: "emerging"
 summary: "One-sentence pattern description"
 relatedPatterns: ["other-pattern-slug"]
 tags: ["tag1", "tag2", "tag3"]
