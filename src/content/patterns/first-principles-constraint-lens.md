@@ -27,9 +27,11 @@ This pattern applies when you are:
 - Any ideation task where you suspect the agent is anchoring on the training distribution
 
 **Do not apply this lens when:**
-- The correct answer IS the conventional solution — don't force novelty for its own sake
 - The task is implementation: "use this library correctly" is not a first-principles problem
 - The task is review or audit: you want the agent to know existing standards and apply them
+- The task is hybrid (design + implementation in the same prompt): split it first. Give the first-principles lens only the design phase; hand the output to a precision agent for implementation. Applying this lens to an unsplit implementation task risks the agent deriving a custom mechanism where you needed a working library integration.
+
+**If you suspect the conventional solution is correct**: run the lens anyway alongside a baseline. If the first-principles derivation converges on the same answer independently, you've validated the conventional solution rather than anchored on it. Convergence under constraint is confirmation; convergence without constraint is anchoring.
 
 ## Solution
 
@@ -83,6 +85,8 @@ instead.
 | Novel per run | 0.08 | 0.61 |
 | **Improvement** | baseline | **7.5× more efficient** |
 
+*Efficiency here is measured in novel concepts per run — not in solution quality. Novel ≠ correct. See Tradeoffs: "Novelty without value."*
+
 **First Principles lens specifically produced 4 of the 11 novel concepts (36%):**
 
 - **Executable Predicate Graphs** — compiler-first memory design: WASM → AST compilation applied to agent memory predicates (claude-sonnet-4.6)
@@ -111,7 +115,14 @@ instead.
 
 **Watch out for:**
 
-- **Derivation theater**: The agent describes a mechanism in first-principles language but names a known tool at the end anyway ("therefore: use Redis"). Check whether the conclusion is actually derived or just renamed. If the constraint produces "I derived we need a hash table with TTL, which I will call a cache", the lens is working. If it produces "therefore Redis", the frame broke before the conclusion.
+- **Derivation theater**: The agent describes a mechanism in first-principles language but names a known tool at the end anyway. The lens broke if the conclusion is just a rename. Compare:
+
+  | Lens working | Lens broke |
+  |---|---|
+  | "The constraint requires a hash table with TTL semantics and O(1) reads. This mechanism is called a cache." | "Therefore, use Redis." |
+  | "Access patterns require append-only ordered storage with consumer-group replay. I'll call this a log store." | "Therefore, use Kafka." |
+
+  Detection heuristic: if the proposed mechanism can be swapped 1:1 for an existing named tool without loss of specificity, the agent derived nothing — it recalled and renamed.
 
 - **Over-constraint paralysis**: On some tasks, the prohibition on existing tools produces refusal-adjacent behavior ("I cannot propose a solution without reference to existing tools"). Soften by allowing tools to be named *after* derivation: "You may reference an existing tool only after you have independently derived that its mechanism is correct for the constraints stated."
 
