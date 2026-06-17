@@ -108,13 +108,13 @@ The `ACK_REQUIRED` block requires the agent to open its first message with an ex
 
 ## Evidence
 
-**DyLAN (COLM2024, arXiv:2310.02170)**: Structured agent communication reduces coordination failures by 20–25% on complex tasks. The mechanism is disambiguation at dispatch time — the receiving agent knows what was tried, what the success boundary is, and what scope it must not violate.
+**DyLAN (COLM2024, arXiv:2310.02170)**: Dynamic LLM-Powered Agent Network reports up to 25% accuracy improvement on specific tasks through structured agent selection and communication. The mechanism is disambiguation at dispatch time — selecting which agents participate and what each is responsible for reduces the coordination overhead that produces failures in unstructured multi-agent pipelines.
 
-**MachineSoM (arXiv:2310.02124)**: LLM agents exhibit conformity — sequential reviewers anchor on prior framings. Parallel dispatch (which structured handoff enables safely) guards against this conformity bias by preventing shared context contamination.
+**MachineSoM (ACL 2024, arXiv:2310.02124)**: LLM agents in sequential collaboration exhibit conformity bias — reviewers anchor on prior framings regardless of correctness. Structured handoffs enable safer parallel dispatch (agents receive isolated context rather than a shared chain), which guards against this bias.
 
-**Autogent PLAYBOOK implementation**: The autogent project adopted `HANDOFF_CONTEXT` headers in its sprint supervisor prompts after the I-8 and P48 incidents. The pattern is now part of every `spawn_task` dispatch template. The estimated coverage of coordination failure classes by this pattern is 60–70% of sprint failures in the autogent incident log (auto-merge, scope misinterpretation, stale-memory re-dispatch, missing memory updates).
+**Autogent PLAYBOOK implementation**: The autogent project adopted `HANDOFF_CONTEXT` headers in its sprint supervisor prompts after the I-8 and P48 incidents. The pattern is codified in autogent's PLAYBOOK as the standard format for every `spawn_task` dispatch. The pattern addresses the majority of documented sprint coordination failures in autogent's incident log: auto-merge (I-8), scope misinterpretation (P48), stale-memory re-dispatch, and missing memory updates.
 
-**Token cost**: ~180–250 tokens per dispatch header. Break-even is approximately 1 prevented failure every ~50 dispatches. Autogent's incident frequency (multiple coordination failures per week at scale) exceeds this threshold.
+**Token cost**: ~180–250 tokens per dispatch header. Whether this overhead is justified depends on dispatch frequency and failure cost — for agents with write access and meaningful side effects, a single prevented incident typically offsets hundreds of dispatch header costs.
 
 ## Tradeoffs
 
