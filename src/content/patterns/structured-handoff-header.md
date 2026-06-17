@@ -50,10 +50,11 @@ HANDOFF_CONTEXT:
   expected_output: PR with fix + regression test
   success_criteria:
     - npm test passes with 0 failures
-    - No new files outside src/
+    - No new source files outside src/
   preconditions:
     - npm test passes at baseline before changes
     - Branch from main (not from a feature branch)
+    - memory:project-manifest topic exists (required by memory_to_update below)
   do_not:
     - call merge_pull_request directly
     - create new memory topics; update existing ones only
@@ -108,9 +109,9 @@ The `ACK_REQUIRED` block requires the agent to open its first message with an ex
 
 ## Evidence
 
-**DyLAN (COLM2024, arXiv:2310.02170)**: Dynamic LLM-Powered Agent Network reports up to 25% accuracy improvement on specific tasks through structured agent selection and communication. The mechanism is disambiguation at dispatch time — selecting which agents participate and what each is responsible for reduces the coordination overhead that produces failures in unstructured multi-agent pipelines.
+**DyLAN (COLM2024, arXiv:2310.02170)**: Dynamic LLM-Powered Agent Network demonstrates that structuring how agents communicate and what each agent is responsible for yields up to 25% accuracy improvement on specific tasks. The broader principle — that explicit scoping and disambiguation at the point of agent selection reduces coordination overhead — provides empirical grounding for why structured dispatch headers (which apply the same disambiguation at prompt time) are expected to improve coordination reliability.
 
-**MachineSoM (ACL 2024, arXiv:2310.02124)**: Studies collaboration mechanisms in multi-LLM societies and observes conformity bias — agents in sequential collaboration anchor on prior (sometimes incorrect) responses from earlier agents. The implication for dispatch: parallel agent spawns with isolated, non-shared context (enabled by structured handoffs that declare explicit per-agent scopes) avoid the sequential contamination path this bias exploits.
+**MachineSoM (ACL 2024, arXiv:2310.02124)**: Studies collaboration mechanisms in multi-LLM societies and observes conformity bias — agents in sequential collaboration anchor on prior (sometimes incorrect) responses from earlier agents. Parallel dispatch with isolated, per-agent context avoids the sequential contamination path. Note the tradeoff: parallel dispatch reduces conformity risk but increases scope-collision risk if scopes are not explicitly declared — which is exactly what `do_not` and `memory_to_update` scoping fields in this pattern address.
 
 **Autogent PLAYBOOK implementation**: The autogent project adopted `HANDOFF_CONTEXT` headers in its sprint supervisor prompts after the I-8 and P48 incidents. The pattern is codified in autogent's PLAYBOOK as the standard format for every `spawn_task` dispatch. The pattern addresses the majority of documented sprint coordination failures in autogent's incident log: auto-merge (I-8), scope misinterpretation (P48), stale-memory re-dispatch, and missing memory updates.
 
