@@ -57,9 +57,9 @@ for (const p of bank) {
 }
 ```
 
-### Two invariant types to enumerate
+### Three invariant types to enumerate
 
-Every enumeration validator should check both invariant types, not just one:
+Every enumeration validator should check all applicable invariant types:
 
 **Input-legality invariants** — properties the inputs must satisfy, independent of any output:
 ```typescript
@@ -79,6 +79,24 @@ for (const [input, output] of zip(inputs, outputs)) {
   assert(isCorrect(input, output), `${input.id}: output does not satisfy invariant`);
 }
 ```
+
+**Global/cross-item invariants** — properties that span the collection as a whole (uniqueness, coverage, deduplication, ordering):
+```typescript
+// Are all IDs unique? (positional checks cannot catch this)
+const ids = bank.map(p => p.id);
+const uniqueIds = new Set(ids);
+assert.equal(uniqueIds.size, ids.length,
+  `duplicate IDs found: ${ids.filter((id, i) => ids.indexOf(id) !== i).join(', ')}`);
+
+// Do the items cover all required categories?
+const required = new Set(['easy', 'medium', 'hard']);
+const present = new Set(bank.map(p => p.difficulty));
+for (const level of required) {
+  assert(present.has(level), `coverage gap: no ${level} puzzles in bank`);
+}
+```
+
+Checking only per-item invariants misses entire bug classes where the items individually pass but the collection as a whole is invalid (duplicates, gaps, ordering violations).
 
 Checking only output-correctness invariants misses entire bug classes where the input itself is structurally illegal. Both must be enumerated.
 
@@ -114,18 +132,28 @@ If violations > 0, regenerate as needed and re-validate the **entire batch** (no
 When an item in the batch cannot be parsed or interpreted, the safe default is to count it as a violation:
 
 ```typescript
+let validatorErrors = 0;
+
 function matingMoveCount(puzzle: Puzzle): number {
   try {
     return allLegalMoves(puzzle.position)
       .filter(m => isCheckmate(applyMove(puzzle.position, m))).length;
   } catch (e) {
-    // Fail closed on parse anomalies — count as a violation.
-    // IMPORTANT: if this fires for many items, the validator itself may be broken.
-    // Tally unexpected errors separately and abort the run if they exceed a threshold
-    // (e.g., >20% of items throwing = systemic issue, not data quality).
+    // Count parse failures as violations (fail closed).
+    // But track separately — if validator errors dominate, throw to abort the run:
+    // a broken checker producing mostly errors is a systemic issue, not a data issue.
+    validatorErrors++;
     log.warn(`matingMoveCount: unexpected error for ${puzzle.id}`, e);
     return -1;
   }
+}
+
+// After enumeration:
+const VALIDATOR_ERROR_THRESHOLD = Math.ceil(bank.length * 0.2); // 20%
+if (validatorErrors >= VALIDATOR_ERROR_THRESHOLD) {
+  throw new Error(
+    `Validation aborted: ${validatorErrors}/${bank.length} items threw (likely broken validator, not bad data)`
+  );
 }
 ```
 
@@ -149,7 +177,7 @@ This is a single controlled experiment (one batch, one property type), which is 
 
 The autogent codebase applies enumeration-first verification in several production contexts:
 - Pattern file frontmatter validation: every `.md` file in `src/content/patterns/` is validated against the Zod schema in `src/content/config.ts` at build time (Astro content collections). The build fails if any file violates a required field — a whole-collection invariant check, not a per-file trace.
-- Sprint batch validation: when sprint agents generate sets of SQL todo records, required-field invariants are verified with a schema-complete query (`SELECT * FROM todos WHERE id IS NULL OR title IS NULL OR status IS NULL`) rather than mentally tracing through the insert statements. The query checks every required column explicitly — an incomplete query (checking only some columns) produces false confidence.
+- Sprint batch validation: when sprint agents generate sets of SQL todo records, required-field invariants are verified with a query derived from the schema's required columns (`SELECT * FROM todos WHERE id IS NULL OR title IS NULL OR status IS NULL`) rather than mentally tracing through the insert statements. The key discipline: the column list must be derived from the schema definition, not hardcoded independently — a hardcoded list goes stale when the schema changes, silently invalidating the validator.
 
 ## Tradeoffs
 
