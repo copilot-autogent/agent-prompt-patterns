@@ -72,6 +72,9 @@ for (const item of inputs) {
 **Output-correctness invariants** — properties relating each output to its input:
 ```typescript
 // Does every output correctly correspond to its input?
+// Assert cardinality first — zip() silently drops excess items if lengths differ
+assert.equal(inputs.length, outputs.length,
+  `cardinality mismatch: ${inputs.length} inputs vs ${outputs.length} outputs`);
 for (const [input, output] of zip(inputs, outputs)) {
   assert(isCorrect(input, output), `${input.id}: output does not satisfy invariant`);
 }
@@ -103,7 +106,7 @@ After generating, verify every item with an enumeration validator:
 - Check input-legality: [specific structural precondition]
 - Check output-correctness: [specific property P]
 Do NOT verify by tracing — write code that checks all items and reports any violations.
-If violations > 0, regenerate only the failing items and re-verify.
+If violations > 0, regenerate the failing items and re-verify the **entire batch** (not just the replaced items — batch-level invariants like uniqueness or coverage can be broken by any regeneration).
 ```
 
 ### Fail closed on parse anomalies
@@ -115,8 +118,12 @@ function matingMoveCount(puzzle: Puzzle): number {
   try {
     return allLegalMoves(puzzle.position)
       .filter(m => isCheckmate(applyMove(puzzle.position, m))).length;
-  } catch {
-    return -1; // parse failure → treat as violation
+  } catch (e) {
+    // Treat parse/runtime failures as violations (fail closed).
+    // Note: if this catch fires unexpectedly, investigate the validator itself —
+    // a broken checker hiding behind "violations" is worse than a trace.
+    log.warn(`matingMoveCount: unexpected error for ${puzzle.id}`, e);
+    return -1;
   }
 }
 ```
@@ -140,8 +147,8 @@ This is a single controlled experiment (one batch, one property type), which is 
 **Generalization evidence (observational):**
 
 The autogent codebase applies enumeration-first verification in several production contexts:
-- Pattern file frontmatter validation: every `.md` file in `src/content/patterns/` is checked against the schema in `src/content/config.ts` at build time (Astro's content collection validator)
-- Batch-item processing in sprint agents: SQL-tracked todos are enumerated with `SELECT * FROM todos WHERE status != 'done'` rather than traced mentally
+- Pattern file frontmatter validation: every `.md` file in `src/content/patterns/` is validated against the Zod schema in `src/content/config.ts` at build time (Astro content collections). The build fails if any file violates a required field — a whole-collection invariant check, not a per-file trace.
+- Sprint batch validation: when sprint agents generate sets of SQL todo records, the invariant "all required fields are non-null" is verified by querying `SELECT * FROM todos WHERE id IS NULL OR title IS NULL` rather than mentally tracing through the insert statements.
 
 ## Tradeoffs
 
@@ -153,7 +160,7 @@ The autogent codebase applies enumeration-first verification in several producti
 
 **Validator correctness**: An incorrect validator that always returns "pass" is worse than a trace, because it adds false confidence programmatically. Validate the validator by injecting a known-bad item and confirming it fails. If the validator can't be made to fail on a known violation, it's not checking what you think it's checking.
 
-**Performance**: For large batches (N > 10,000) or expensive property checks, full enumeration may be cost-prohibitive. Use stratified sampling with a stated confidence level rather than silent incomplete enumeration. Always document when you're sampling, and document the sampling strategy explicitly.
+**Performance**: For large batches (N > 10,000) or expensive property checks, full enumeration may be cost-prohibitive. In these cases, use stratified sampling — but be explicit that sampling shifts the guarantee from universal ("all items satisfy P") to probabilistic ("≥95% of items satisfy P at 99% confidence"). A sampling-based result is not a substitute for an enumeration-based universal claim; it is a weaker claim that must be stated as such in any downstream documentation or assertion.
 
 ## Related Patterns
 
