@@ -110,7 +110,7 @@ The `ACK_REQUIRED` block requires the agent to open its first message with an ex
 
 **DyLAN (COLM2024, arXiv:2310.02170)**: Dynamic LLM-Powered Agent Network reports up to 25% accuracy improvement on specific tasks through structured agent selection and communication. The mechanism is disambiguation at dispatch time — selecting which agents participate and what each is responsible for reduces the coordination overhead that produces failures in unstructured multi-agent pipelines.
 
-**MachineSoM (ACL 2024, arXiv:2310.02124)**: LLM agents in sequential collaboration exhibit conformity bias — reviewers anchor on prior framings regardless of correctness. Structured handoffs enable safer parallel dispatch (agents receive isolated context rather than a shared chain), which guards against this bias.
+**MachineSoM (ACL 2024, arXiv:2310.02124)**: Studies collaboration mechanisms in multi-LLM societies and observes conformity bias — agents in sequential collaboration anchor on prior (sometimes incorrect) responses from earlier agents. The implication for dispatch: parallel agent spawns with isolated, non-shared context (enabled by structured handoffs that declare explicit per-agent scopes) avoid the sequential contamination path this bias exploits.
 
 **Autogent PLAYBOOK implementation**: The autogent project adopted `HANDOFF_CONTEXT` headers in its sprint supervisor prompts after the I-8 and P48 incidents. The pattern is codified in autogent's PLAYBOOK as the standard format for every `spawn_task` dispatch. The pattern addresses the majority of documented sprint coordination failures in autogent's incident log: auto-merge (I-8), scope misinterpretation (P48), stale-memory re-dispatch, and missing memory updates.
 
@@ -125,8 +125,9 @@ The `ACK_REQUIRED` block requires the agent to open its first message with an ex
 **Watch out for**:
 - **`do_not` list creep**: Over time, dispatchers accumulate long `do_not` lists from past incidents. Review periodically — many entries become obsolete as agent behavior matures or tool permissions change.
 - **Stale `already_tried` entries**: On the third re-dispatch, `already_tried` can contain multiple approaches, some of which were actually partially successful. Keep entries precise: "tried X, failed at step Y because Z" not "tried everything."
-- **`ACK_REQUIRED` ignored**: Some agent contexts don't surface the ACK naturally. Verify the first message explicitly; if it lacks the ACK structure, the context may not have been loaded correctly.
-- **Omitting `preconditions` for "simple" tasks**: The I-8 incident happened on a task that seemed simple. Preconditions are cheapest to populate and most valuable when the task appears straightforward.
+- **ACK is self-attestation**: `ACK_REQUIRED` confirms the agent *can restate* the required context — it does not guarantee the underlying recall/read tool calls actually succeeded. If precondition verification matters for correctness, add a runtime check (e.g., verify the baseline test passes before proceeding) rather than relying solely on the ACK message.
+- **`ACK_REQUIRED` in one-shot runners**: In async or one-shot dispatchers that don't process a first-turn reply, `ACK_REQUIRED` is unenforceable as a gate. Treat it as a first-message discipline in those contexts rather than a hard start condition.
+- **Omitting `preconditions` for "simple" tasks**: The I-8 incident happened on a task that appeared simple. Preconditions are cheapest to populate and most valuable when the task appears straightforward.
 
 ## Related Patterns
 
