@@ -36,7 +36,7 @@ This pattern applies whenever an agent produces a batch of items and makes a uni
 The pattern is especially important when:
 1. The property P is a *structural invariant* (can be programmatically checked)
 2. The output will be used as input to another system or agent
-3. The batch has more than ~5 items (beyond this, trace reliability degrades significantly)
+3. The batch has more than ~3 items (beyond this, trace reliability degrades significantly)
 4. A violation would be costly to discover after the fact
 
 ## Solution
@@ -106,7 +106,7 @@ After generating, verify every item with an enumeration validator:
 - Check input-legality: [specific structural precondition]
 - Check output-correctness: [specific property P]
 Do NOT verify by tracing — write code that checks all items and reports any violations.
-If violations > 0, regenerate the failing items and re-verify the **entire batch** (not just the replaced items — batch-level invariants like uniqueness or coverage can be broken by any regeneration).
+If violations > 0, regenerate as needed and re-validate the **entire batch** (not just the replaced items). Global invariants like uniqueness or coverage can be broken by any regeneration, so partial re-validation is unsafe.
 ```
 
 ### Fail closed on parse anomalies
@@ -119,9 +119,10 @@ function matingMoveCount(puzzle: Puzzle): number {
     return allLegalMoves(puzzle.position)
       .filter(m => isCheckmate(applyMove(puzzle.position, m))).length;
   } catch (e) {
-    // Treat parse/runtime failures as violations (fail closed).
-    // Note: if this catch fires unexpectedly, investigate the validator itself —
-    // a broken checker hiding behind "violations" is worse than a trace.
+    // Fail closed on parse anomalies — count as a violation.
+    // IMPORTANT: if this fires for many items, the validator itself may be broken.
+    // Tally unexpected errors separately and abort the run if they exceed a threshold
+    // (e.g., >20% of items throwing = systemic issue, not data quality).
     log.warn(`matingMoveCount: unexpected error for ${puzzle.id}`, e);
     return -1;
   }
@@ -148,7 +149,7 @@ This is a single controlled experiment (one batch, one property type), which is 
 
 The autogent codebase applies enumeration-first verification in several production contexts:
 - Pattern file frontmatter validation: every `.md` file in `src/content/patterns/` is validated against the Zod schema in `src/content/config.ts` at build time (Astro content collections). The build fails if any file violates a required field — a whole-collection invariant check, not a per-file trace.
-- Sprint batch validation: when sprint agents generate sets of SQL todo records, the invariant "all required fields are non-null" is verified by querying `SELECT * FROM todos WHERE id IS NULL OR title IS NULL` rather than mentally tracing through the insert statements.
+- Sprint batch validation: when sprint agents generate sets of SQL todo records, required-field invariants are verified with a schema-complete query (`SELECT * FROM todos WHERE id IS NULL OR title IS NULL OR status IS NULL`) rather than mentally tracing through the insert statements. The query checks every required column explicitly — an incomplete query (checking only some columns) produces false confidence.
 
 ## Tradeoffs
 
@@ -156,7 +157,7 @@ The autogent codebase applies enumeration-first verification in several producti
 
 **Properties that can't be enumerated**: Semantic quality (is this puzzle *interesting*?), style, subjective fitness-for-purpose. Enumeration-first verification applies to *structural invariants*, not subjective ones. Use sampling + human review for the latter.
 
-**Single-item outputs**: Enumeration overhead is not worth it for a single item. The pattern applies when N ≥ 3 and you are making a universal claim.
+**Single-item outputs**: Enumeration overhead is not worth it for a single item. The pattern applies when N ≥ 3 and you are making a universal claim. (This aligns with the Context threshold: trace reliability degrades meaningfully past ~3 items.)
 
 **Validator correctness**: An incorrect validator that always returns "pass" is worse than a trace, because it adds false confidence programmatically. Validate the validator by injecting a known-bad item and confirming it fails. If the validator can't be made to fail on a known violation, it's not checking what you think it's checking.
 
