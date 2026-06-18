@@ -44,14 +44,14 @@ Particularly important when:
 
 **The four-step ideation sequence:**
 
-1. **Recall synthesis memory first.** Before scanning the current state, retrieve relevant research synthesis topics: prior competitive analysis, domain research, user feedback synthesis. Use `recall_memory("[project]-*")` or specific topic names known to contain synthesis.
+1. **Recall synthesis memory first.** Before scanning the current state, attempt to retrieve relevant research synthesis topics: project manifest, competitive analysis, domain research, user feedback synthesis. If no topics are found, that itself is a signal to invest in synthesis before the next ideation cycle.
 
 2. **Classify proposals by type.** Distinguish:
    - **Strategic**: new capability, differentiating value, fills a gap surfaced by synthesis
    - **Polish**: incremental UX improvement, cosmetic fix
    - **Data Quality**: foundational correctness, reliability
 
-   Aim for ≥30% strategic proposals per ideation run.
+   When synthesis topics were found: aim for ≥30% strategic proposals. Each strategic proposal must include a sentence linking it to the specific synthesis finding that motivated it (prevents fabricated quota-filling). When no synthesis topics are found: proceed with polish/data-quality and note "no synthesis available this run."
 
 3. **Route synthesis findings to backlog first.** When a synthesis topic implies a missing capability, file a proposal — even if the live site doesn't obviously show the gap. The live system reflects past decisions, not future opportunities.
 
@@ -60,21 +60,23 @@ Particularly important when:
 **In the ideation task prompt:**
 ```
 MANDATORY FIRST STEP (before scanning the live site):
-1. recall_memory("[project]-manifest") — read the synthesis and research sections
-2. For other synthesis topics: recall_memory("[project] synthesis"),
-   recall_memory("[project] analysis"), recall_memory("[project] user feedback")
-   (use keyword search; exact topic names vary by memory backend)
-3. List the strategic opportunities visible in synthesis memory
-4. If synthesis topics exist: file at least one strategic proposal per topic
-   that implies a capability gap
-5. THEN scan the live site for polish/data quality improvements
-6. Tag each proposal: [strategic] / [polish] / [data-quality]
+1. Recall synthesis memory using search terms specific to this project:
+   "[project] synthesis", "[project] analysis", "[project] user feedback",
+   "[project] manifest". If your memory backend requires exact topic names,
+   enumerate the known ones (e.g. "realestate-competitive-analysis-2025").
+2. Assess: did any synthesis topics return content?
+   - YES → list the strategic opportunities implied, then continue to step 4
+   - NO  → note "no synthesis available this run"; skip to step 5
+3. (If synthesis found) For each topic implying a capability gap, draft
+   one strategic proposal. Each draft MUST include: what synthesis said +
+   what capability is missing + why it's differentiating. No evidence = not
+   a strategic proposal; file it as [polish] or discard.
+4. Synthesize into a list of [strategic] proposals before opening the live site.
+5. THEN scan the live site for polish/data quality improvements.
+6. Tag every proposal: [strategic] / [polish] / [data-quality].
 7. If synthesis topics were found: verify ≥30% are tagged [strategic].
-   If NO synthesis topics exist or all are flagged stale: skip the floor,
-   document "no synthesis available this run", and proceed with polish/data-quality.
+   Proposals tagged [strategic] without a cited synthesis finding do not count.
 ```
-
-> **Note on recall_memory behavior:** The keyword-search queries above work with semantic/FTS backends. On exact-match-only backends, enumerate known topic names explicitly (e.g. `recall_memory("realestate-competitive-analysis-2025")`). The pattern is backend-agnostic; adjust discovery strategy to what your memory system supports.
 
 ## Evidence
 
@@ -87,7 +89,9 @@ MANDATORY FIRST STEP (before scanning the live site):
 **Root cause confirmed:**
 Compared agent trace for realestate-ideation (scanned site → filed 5 polish issues) vs existing synthesis topic that listed 4 strategic timing features. No recall of synthesis → 0 strategic proposals. The synthesis topic was present and findable; it was simply not recalled.
 
-**Source data:** `ideation-task-quality-audit-june-2026` memory; `autonomous-initiative-run-35-june-17` memory.
+**Source data:** Autonomous ideation agent audit across 6 side-project repositories (June 2026). Classification methodology: all open issues were labeled strategic / polish / data-quality by examining issue title + body; strategic = new capability or differentiating feature, polish = UX/cosmetic/label fix, data-quality = correctness/reliability fix. Agent traces compared across two ideation runs for the same project — one with synthesis recall, one without.
+
+> _Note:_ The underlying memory topics (`ideation-task-quality-audit-june-2026`, `autonomous-initiative-run-35-june-17`) are stored in the originating system's persistent memory and are not publicly accessible. The methodology is reproducible by applying the same classification rubric to any multi-project ideation queue.
 
 **Predicted effect of fix:**
 - Ratio should shift from 15:70:15 → ~30:55:15 (strategic:polish:data-quality)
@@ -100,7 +104,7 @@ Compared agent trace for realestate-ideation (scanned site → filed 5 polish is
 **Cost**: Adds a recall step that takes 1–2 model calls at the start of each ideation run. Small cost relative to the value of strategic proposals.
 
 **Watch out for**:
-- **Recall of stale synthesis:** If synthesis memory hasn't been updated since a major pivot, recalling it will surface outdated opportunities. Add a date header to each synthesis topic (e.g., `## Last Updated: 2026-06-01`) and check it at recall time. When a topic lacks an explicit date — common in older notes — treat it as potentially stale and flag it rather than skipping it: "This synthesis has no date header; treat proposals from it as lower-confidence." If your memory backend exposes a modification timestamp via `ls ~/.autogent/memory/` or similar, that provides an independent signal.
+- **Recall of stale synthesis:** If synthesis memory hasn't been updated since a major pivot, recalling it will surface outdated opportunities. Add a date header to each synthesis topic (e.g., `## Last Updated: 2026-06-01`) and check it at recall time. When a topic lacks an explicit date — common in older notes — treat it as potentially stale and flag it rather than skipping it: "This synthesis has no date header; treat proposals from it as lower-confidence." If your memory system surfaces modification metadata (file timestamps, API `updated_at` fields), use that as an independent signal; otherwise fall back to the explicit date header.
 - **Flooding the backlog with unvalidated strategic proposals:** Require that each strategic proposal include a 2-sentence rationale connecting the synthesis finding to a concrete user value or competitive advantage. This filters out noise.
 - **Ignoring the 30% floor in fast runs:** When the task prompt is under velocity pressure, the synthesis recall step tends to be skipped first. Treat the 30% floor as a hard gate, not a soft goal.
 
