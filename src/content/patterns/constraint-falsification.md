@@ -50,10 +50,10 @@ Try to DO X, not a prerequisite or sufficient-but-not-necessary condition for X:
 # BAD — tests one sufficient condition; absence doesn't prove X is unavailable
 which g++
 
-# GOOD — directly tests the capability
-printf 'usi\nquit\n' | /usr/local/bin/yaneuraou
-curl -s https://api.example.com/ping
-python -c "import target_library; print('available')"
+# GOOD — directly tests the capability end-to-end
+printf 'usi\nquit\n' | /usr/local/bin/yaneuraou   # runs the engine and checks its response
+curl -s https://api.example.com/v2/items | jq '.items | length'  # exercises the feature, not just reachability
+python -c "import pandas; df = pandas.DataFrame({'x': [1]}); print(df.shape)"  # exercises the operation, not just importability
 ```
 
 The test must be end-to-end: it should exercise the actual capability, not a prerequisite.
@@ -63,8 +63,9 @@ The test must be end-to-end: it should exercise the actual capability, not a pre
 When in doubt about what's available in an environment:
 
 ```
-# Check the Dockerfile for installed binaries
-cat Dockerfile | grep -E '(RUN|COPY|ADD)' | grep -v "#"
+# Check the Dockerfile for installed binaries (also check FROM base image stages — capabilities
+# inherited from the base image won't appear in RUN/COPY/ADD lines of the current stage)
+cat Dockerfile | grep -E '(FROM|RUN|COPY|ADD)' | grep -v "#"
 
 # Check the README for capabilities
 grep -i "available\|installed\|prebuilt\|bundled" README.md
@@ -97,7 +98,7 @@ Dependent plan items: [N items may proceed]
 
 Accepting a limitation feels productive — it produces a clear path forward (the workaround). Falsifying it takes 30 seconds. This asymmetry is dangerous: the 30-second test that falsifies a false constraint is far cheaper than the 5-issue roadmap built on it.
 
-**Decision rule:** Before treating any "blocked" conclusion as load-bearing, ask: "What single command would prove this wrong?" If you can answer that question, run the command.
+**Decision rule:** Before treating any "blocked" conclusion as load-bearing, ask: "What single **read-only or safe** command would prove this wrong?" If you can answer that question, run it. Prefer probes that don't create side effects: version flags (`--version`, `-V`), read-only queries, dry-run modes, and handshake-level protocol checks (`usi\nquit\n`). Reserve write-mode or cost-incurring tests for after a read-only probe confirms the capability exists.
 
 ## Evidence
 
@@ -123,11 +124,11 @@ The same error class appears whenever an agent tests a sufficient-but-not-necess
 | `which g++` | Can I compile from source? | Can I run the engine? |
 | `which ffmpeg` | Is ffmpeg installed at a standard path? | Can I process video? (`ffmpeg -version`) |
 | `pip show pandas` | Is pandas in the venv? | Can I import pandas? (`python -c "import pandas"`) |
-| HTTP 404 on endpoint A | Is feature A available? | Is the feature available via endpoint B or a different API version? |
+| `curl -s -o /dev/null -w "%{http_code}" https://api.example.com/v2/feature` returns 404 | Is this feature available? | Call the actual operation with a real payload; 404 on one endpoint is direct evidence for that endpoint, but the feature may exist at a different path, version, or method |
 
 In each case, the proxy absence proves nothing about the actual capability.
 
-**Documented in PLAYBOOK rule** (June 2026): "Falsify 'Can't / Blocked' Claims by ATTEMPTING the Capability — Not Testing a Proxy for Its Absence."
+**Documented as a PLAYBOOK rule** (June 2026): "Falsify 'Can't / Blocked' Claims by ATTEMPTING the Capability — Not Testing a Proxy for Its Absence." The rule was added after the YaneuraOu incident and is tracked in the autogent project's operational playbook.
 
 ## Tradeoffs
 
