@@ -75,7 +75,7 @@ ls /usr/local/bin/ | head -20
 ls /usr/bin/ | grep -i target
 ```
 
-One `cat Dockerfile` is faster and more reliable than three turns of hypotheses. The authoritative source (Dockerfile, README, `.tool-versions`, `package.json`) reflects the actual environment; speculation does not.
+One `cat Dockerfile` is faster and less speculative than three turns of hypotheses — it tells you where to look. It does not substitute for end-to-end verification: base image inherited capabilities, failed installs, and stale files can all cause a mismatch. Treat it as a triage step that narrows the search, not as proof of capability presence or absence.
 
 ### Step 3 — Label load-bearing premises before building
 
@@ -98,7 +98,7 @@ Dependent plan items: [N items may proceed]
 
 Accepting a limitation feels productive — it produces a clear path forward (the workaround). Falsifying it takes 30 seconds. This asymmetry is dangerous: the 30-second test that falsifies a false constraint is far cheaper than the 5-issue roadmap built on it.
 
-**Decision rule:** Before treating any "blocked" conclusion as load-bearing, ask: "What single **read-only or safe** command would prove this wrong?" If you can answer that question, run it. Prefer probes that don't create side effects: version flags (`--version`, `-V`), read-only queries, dry-run modes, and handshake-level protocol checks (`usi\nquit\n`). Reserve write-mode or cost-incurring tests for after a read-only probe confirms the capability exists.
+**Decision rule:** Before treating any "blocked" conclusion as load-bearing, ask: "What single **read-only or safe** command would prove this wrong?" If you can answer that question, run it. Prefer probes that don't create side effects: version/handshake checks, read-only queries, dry-run modes, and protocol-level exchanges. Reserve write-mode or cost-incurring tests for after a safe probe confirms the capability exists. Note that executing any binary — even for a read-only handshake — carries its own trust assumption; verify the binary's origin before using it as a falsification probe in untrusted environments.
 
 ## Evidence
 
@@ -119,12 +119,12 @@ The engine was prebuilt and bundled in the Dockerfile. The entire constraint tre
 
 The same error class appears whenever an agent tests a sufficient-but-not-necessary condition for a capability:
 
-| False proxy test | What was actually being checked | What should have been checked |
+| False proxy test | What was actually being checked | Closer end-to-end check |
 |---|---|---|
-| `which g++` | Can I compile from source? | Can I run the engine? |
-| `which ffmpeg` | Is ffmpeg installed at a standard path? | Can I process video? (`ffmpeg -version`) |
-| `pip show pandas` | Is pandas in the venv? | Can I import pandas? (`python -c "import pandas"`) |
-| `curl -s -o /dev/null -w "%{http_code}" https://api.example.com/v2/feature` returns 404 | Is this feature available? | Call the actual operation with a real payload; 404 on one endpoint is direct evidence for that endpoint, but the feature may exist at a different path, version, or method |
+| `which g++` | Can I compile from source? | Run the engine: `printf 'usi\nquit\n' \| /usr/local/bin/engine` |
+| `which ffmpeg` | Is ffmpeg on PATH? | Process a minimal input: `ffmpeg -f lavfi -i nullsrc=d=1 -f null -` |
+| `pip show pandas` | Is pandas recorded as installed? | Execute the target operation: `python -c "import pandas; pandas.read_csv('/dev/null')"` |
+| `curl …/v2/feature` returns 404 | Is this exact endpoint present? | Try the actual operation on a known-safe/read-only resource; a 404 on one path is direct evidence for that path but not for the feature at alternate paths or versions |
 
 In each case, the proxy absence proves nothing about the actual capability.
 
