@@ -29,9 +29,10 @@ A sprint ships a feature completely — backend logic implemented, tests pass, P
 
 This pattern applies to any sprint-based workflow where:
 
-- Backend and frontend are in separate files (fullstack web projects, CLI + display layer, data pipeline + visualization)
 - Issues have user-facing acceptance criteria ("user should see X", "user can do Y")
 - Issues are closed on merge without verifying the user-visible path
+
+Common scenarios: fullstack projects where backend and frontend are in separate files; same-file implementations where rendering is conditional; feature-flag rollouts where the flag is never flipped; config-only wiring gaps where an integration is "supported" but not enabled.
 
 It is especially important for:
 
@@ -56,9 +57,9 @@ It does **not** apply when the issue's acceptance criteria are backend-only ("un
 
 2. **"Backend ready to be imported" = 0% user value.** A module that implements a feature but isn't imported by any UI delivers zero value until wiring is complete. Do not close the issue as "done" in this state.
 
-3. **If rendering must be deferred, file the follow-up BEFORE closing.** Not "follow-up sprint" as prose — a numbered GitHub issue with explicit acceptance criteria. Include the issue number in the closing comment.
+3. **If rendering must be deferred, file the follow-up BEFORE closing, and do NOT close the parent.** Not "follow-up sprint" as prose — a numbered GitHub issue with explicit acceptance criteria. The original issue remains open until the rendering is merged and the user can actually see/interact with the feature.
 
-4. **Explicit issue number = commitment.** "Backend ships in #N, rendering tracked in #M" is acceptable. "I'll wire it up later" is not — sessions are stateless and "later" rarely arrives.
+4. **Explicit issue number = commitment.** "Backend ships in #N, rendering tracked in #M (open)" is acceptable. "I'll wire it up later" is not — sessions are stateless and "later" rarely arrives.
 
 **Checking the sprint prompt (pre-dispatch self-check):**
 
@@ -69,19 +70,20 @@ Does this sprint's acceptance criterion include any user-visible behavior?
 
 If YES and rendering truly cannot fit in this sprint:
   1. File a tracking issue NOW (not "later")
-  2. Reference its number in the closing comment
-  3. Do NOT close the original issue until the rendering issue is filed AND merged
-     (filing alone is not completion — it only keeps the commitment visible)
+  2. Keep the original issue OPEN — close it only when rendering is merged
+     and the user can actually see/interact with the feature
+  3. Reference the tracking issue number in any PR description or comment
+     (so reviewers know the rendering is explicitly tracked, not forgotten)
 ```
 
 **PR review signal:**
 
 When reviewing a PR on a user-visible issue, the question is not whether specific phrases appear in the PR body — it is whether the user can actually meet the acceptance criterion after the merge. Reject if:
 
-- The acceptance criterion is user-visible AND the rendering path is absent from the diff AND no tracked follow-up issue number is cited
+- The acceptance criterion is user-visible AND the rendering is unimplemented AND no tracked follow-up issue number is cited
 - The PR claims "done" or closes the parent issue while the user-visible path is unimplemented, regardless of how that deferral is worded
 
-Phrase-matching is a heuristic, not the gate. The gate is: "After this merge, can the user actually do/see the thing the issue requires?"
+Note: touching rendering code is not sufficient — a flagged-off, dead-path, or wrong-route render still fails the acceptance criterion. The gate is: **"After this merge, can the user actually do/see the thing the issue requires?"** — not "did we touch rendering files?"
 
 ## Evidence
 
@@ -113,4 +115,4 @@ Phrase-matching is a heuristic, not the gate. The gate is: "After this merge, ca
 
 - **[Follow-Through Discipline](/agent-prompt-patterns/patterns/follow-through-discipline)** — the explicit "file a follow-up issue with a number before closing" rule is an application of follow-through discipline to the rendering gap; "later" without a trigger is not a plan
 - **[Side-Effect Verification](/agent-prompt-patterns/patterns/side-effect-verification)** — both patterns address invisible work; side-effect verification checks "did the tool actually do what it claimed?"; this pattern checks "does the merged code actually produce a visible outcome for the user?"
-- **[Structured Handoff Header](/agent-prompt-patterns/patterns/structured-handoff-header)** — sprint prompts with a `success_criteria` field in the HANDOFF_CONTEXT header are the correct enforcement point: listing "user can see X in the UI" as a success criterion makes the rendering requirement explicit and machine-checkable
+- **[Structured Handoff Header](/agent-prompt-patterns/patterns/structured-handoff-header)** — sprint prompts with a `success_criteria` field in the HANDOFF_CONTEXT header are the correct enforcement point: listing "user can see X in the UI" as a success criterion makes the rendering requirement explicit and reviewable at handoff time
