@@ -32,7 +32,7 @@ This pattern applies to any sprint-based workflow where:
 - Issues have user-facing acceptance criteria ("user should see X", "user can do Y")
 - Issues are closed on merge without verifying the user-visible path
 
-Common scenarios: fullstack projects where backend and frontend are in separate files; same-file implementations where rendering is conditional; feature-flag rollouts where the flag is never flipped; config-only wiring gaps where an integration is "supported" but not enabled.
+Common scenarios: fullstack projects where backend and frontend are in separate files; same-file implementations where rendering is conditional; feature-flag rollouts where the flag is never flipped for the intended users; config-only wiring gaps where an integration is "supported" but not enabled.
 
 It is especially important for:
 
@@ -57,7 +57,7 @@ It does **not** apply when the issue's acceptance criteria are backend-only ("un
 
 2. **"Backend ready to be imported" = 0% user value.** A module that implements a feature but isn't imported by any UI delivers zero value until wiring is complete. Do not close the issue as "done" in this state.
 
-3. **If rendering must be deferred, file the follow-up BEFORE closing, and do NOT close the parent.** Not "follow-up sprint" as prose — a numbered GitHub issue with explicit acceptance criteria. The original issue remains open until the rendering is merged and the user can actually see/interact with the feature.
+3. **If rendering must be deferred, file the follow-up BEFORE closing, and do NOT close the parent.** Not "follow-up sprint" as prose — a numbered GitHub issue with explicit acceptance criteria. The original issue remains open until the rendering is merged and the user can actually see/interact with the feature. **Watch for auto-close keywords** (`Closes #N`, `Fixes #N`) in PR bodies and merge commits — GitHub will close the parent issue automatically on merge even if the rule says to keep it open; use `Related to #N` or `Part of #N` instead when rendering is deferred.
 
 4. **Explicit issue number = commitment.** "Backend ships in #N, rendering tracked in #M (open)" is acceptable. "I'll wire it up later" is not — sessions are stateless and "later" rarely arrives.
 
@@ -96,7 +96,7 @@ Note: touching rendering code is not sufficient — a flagged-off, dead-path, or
 - The contrast prose from sprint #99 was predating all three merges in the user's view
 - Follow-up rendering sprints were mentioned as prose in each PR body; none were filed as tracked issues; none were picked up by the dispatcher
 
-**Evidence level: moderate** — single project incident with a clear causal chain (deferred rendering → acceptance criteria structurally unmet → user perceives no progress). The pattern captures a failure mode that is structural (not incidental to shogi-srs) and applicable to any fullstack sprint workflow.
+**Evidence level: moderate** — single project incident with a clear causal chain (deferred rendering → acceptance criteria structurally unmet → user perceives no progress). The pattern likely generalizes to any workflow that combines user-facing acceptance criteria with sprint-level auto-close and low-fidelity follow-up tracking, but the evidence base is currently a single project.
 
 ## Tradeoffs
 
