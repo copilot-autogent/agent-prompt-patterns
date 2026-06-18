@@ -60,13 +60,13 @@ on successful execution after skips:
 
 **Key design decisions:**
 
-1. **`WARN_EVERY` corresponds to real time, not tick count.** A good default is `Math.ceil(15 / tickIntervalMinutes)` — an escalation approximately every 15 minutes of continuous skipping. At 1-min ticks, that's 15. At 5-min ticks, that's 3.
+1. **`WARN_EVERY` corresponds to real time, not tick count.** A good default is `Math.max(2, Math.ceil(15 / tickIntervalMinutes))` — an escalation approximately every 15 minutes of continuous skipping. At 1-min ticks, that's 15. At 5-min ticks, that's 3. The `Math.max(2, ...)` guard ensures at least 2 consecutive skips before escalation so that one transient skip never immediately triggers a warn; for tick intervals ≥ 15 min this guard keeps the debug-first intent intact.
 
 2. **The debug path is preserved, not replaced.** Transient skips stay quiet. The pattern adds escalation for persistence — it does not make every skip noisy. This is the critical distinction from "just log at warn level always."
 
 3. **Recovery log closes the signal loop.** The `log.info` on recovery is as important as the warn escalation. Without it, an operator seeing the warn has no way to know when the condition cleared. The recovery log also confirms the counter reset correctly and the agent is healthy.
 
-4. **Counter is in-process state (not memory).** For tick-based loops, an in-memory counter suffices — it resets on restart, which is fine because a restart naturally breaks the skip chain. If the agent is truly stateless between invocations (e.g., a cron that spawns fresh processes), store the skip count in a lightweight key-value store or the agent's memory topic.
+4. **Counter is in-memory state (not persisted to storage).** For tick-based loops, an in-memory counter suffices — it resets on restart, which is fine because a restart naturally breaks the skip chain. If the agent is truly stateless between invocations (e.g., a cron that spawns fresh processes), store the skip count in a lightweight key-value store or the agent's memory topic. **Concurrency note**: if multiple instances can run overlapping ticks, a shared in-memory counter races — use an atomic store or accept that escalation is approximate (each instance escalates independently, which is often acceptable).
 
 ### TypeScript implementation
 
@@ -77,11 +77,9 @@ class MyScheduler {
   async tick(): Promise<void> {
     if (await this.sessionPool.isBusy()) {
       this._consecutiveSkips++;
-      const WARN_EVERY = Math.ceil(15 / this.tickIntervalMinutes);
+      const WARN_EVERY = Math.max(2, Math.ceil(15 / this.tickIntervalMinutes));
       if (this._consecutiveSkips % WARN_EVERY === 0) {
-        const minutes = Math.round(
-          (this._consecutiveSkips * this.tickIntervalMinutes)
-        );
+        const minutes = Math.floor(this._consecutiveSkips * this.tickIntervalMinutes);
         log.warn(
           `Skipping tick — session pool busy for ~${minutes}min ` +
           `(${this._consecutiveSkips} consecutive skips) — investigate`
@@ -95,13 +93,15 @@ class MyScheduler {
       return;
     }
 
-    // Recovery signal
+    // Recovery signal — log before resetting so the count is available in the message
     if (this._consecutiveSkips > 0) {
       log.info(`Session pool recovered after ${this._consecutiveSkips} skipped ticks`);
       this._consecutiveSkips = 0;
     }
 
-    // ... normal tick work
+    // ... normal tick work (note: if work throws here, the counter is already reset;
+    // acceptable for most cases — if you need "confirmed recovery only on full success",
+    // move the reset to after the work block completes)
   }
 }
 ```
@@ -113,13 +113,21 @@ In agent task prompts, instruct the agent to track and escalate:
 ```
 ## Skip Escalation (required for any early-return path)
 
-If you exit early because a precondition is unmet (resource busy, rate limited, lock held):
-1. Record the skip in memory topic `<task-name>-skip-log`: { date, reason, count }
-2. Read the current consecutive skip count from the log.
-3. If count >= 3 consecutive skips: post a visible warning with the reason and skip count, then exit.
-4. On any successful run after skips: log recovery and reset the count to 0.
+Track each distinct skip reason with its own counter in memory topic `<task-name>-skip-log`.
 
-Never silently skip without updating the skip log.
+If you exit early because a precondition is unmet (resource busy, rate limited, lock held):
+1. Record the skip: append `{ date, reason, count }` to `<task-name>-skip-log`.
+2. Read the current consecutive skip count for this specific reason from the log.
+3. Compute WARN_INTERVAL as approximately 3 consecutive skips for tasks that run every few
+   minutes, or 2 skips for tasks that run every 15+ minutes.
+4. If count % WARN_INTERVAL == 0 (and count > 0): post a visible warning with the reason,
+   skip count, and approximate elapsed time, then exit.
+5. Otherwise: exit silently (this is the transient-skip path — do not alert).
+6. On any successful run after skips: log recovery ("recovered after N skips for reason X")
+   and reset the count for that reason to 0.
+
+Never silently skip without updating the skip log. Use per-reason counters — a shared
+counter conflates unrelated conditions and produces misleading "consecutive" escalations.
 ```
 
 ## Evidence
@@ -144,7 +152,7 @@ Never silently skip without updating the skip log.
 **Watch out for**:
 
 - **Counter not reset on recovery**: if the counter is only incremented and never reset, warn logs fire forever after the first 15-skip window, even if the agent is healthy. Reset to 0 on every successful execution.
-- **`WARN_EVERY` too low**: at very short tick intervals (e.g., 10 seconds), `WARN_EVERY = 1` would warn on every skip. Apply the "~15 minutes of real time" heuristic, not a fixed tick count.
+- **`WARN_EVERY` and long tick intervals**: with `Math.max(2, Math.ceil(15 / tickIntervalMinutes))`, a 15-min tick interval gives `WARN_EVERY = 2`, meaning the second consecutive skip (already 30 min of missed execution) triggers a warn. For tasks with very infrequent ticks where even one skip is meaningful, lower the floor below 2 explicitly.
 - **Multiple skip conditions in one loop**: if a loop has N different early-return paths, each should have its own counter. A shared counter would misattribute escalations to the wrong condition.
 - **Restart resets the counter**: for long-running conditions that survive restarts, an in-memory counter will silently reset. If restarts are frequent and the condition is persistent, use persistent storage for the skip count.
 
