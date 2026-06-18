@@ -70,16 +70,18 @@ Does this sprint's acceptance criterion include any user-visible behavior?
 If YES and rendering truly cannot fit in this sprint:
   1. File a tracking issue NOW (not "later")
   2. Reference its number in the closing comment
-  3. Do NOT close the original issue until the rendering issue is filed
+  3. Do NOT close the original issue until the rendering issue is filed AND merged
+     (filing alone is not completion — it only keeps the commitment visible)
 ```
 
 **PR review signal:**
 
-When reviewing a PR on a user-visible issue, reject if the PR body contains:
+When reviewing a PR on a user-visible issue, the question is not whether specific phrases appear in the PR body — it is whether the user can actually meet the acceptance criterion after the merge. Reject if:
 
-- "Out of scope: wiring into `<Component>`" (without a filed follow-up issue number)
-- "ready to be imported" (as a terminal state — acceptable only if paired with a filed rendering issue)
-- "UI hookup in a follow-up" (without an issue number)
+- The acceptance criterion is user-visible AND the rendering path is absent from the diff AND no tracked follow-up issue number is cited
+- The PR claims "done" or closes the parent issue while the user-visible path is unimplemented, regardless of how that deferral is worded
+
+Phrase-matching is a heuristic, not the gate. The gate is: "After this merge, can the user actually do/see the thing the issue requires?"
 
 ## Evidence
 
@@ -103,9 +105,9 @@ When reviewing a PR on a user-visible issue, reject if the PR body contains:
 **Watch out for:**
 
 - **"The rendering is trivial, I'll add it at the end"** — if rendering is in-scope, include it in the sprint plan explicitly, not as an afterthought. Trivial wiring is often less trivial than expected (prop threading, state management, conditional display).
-- **Filing a rendering issue and forgetting it** — a filed issue with no `status:` label is invisible to the dispatcher. Apply at minimum `status:draft` so it's picked up.
+- **Filing a rendering issue and forgetting it** — a filed issue with no way to be tracked is invisible. Apply whatever label or status marker your project uses to keep it visible and prioritized; an unfiled "will do later" is no better than a filed-but-abandoned issue.
 - **Accepting "out of scope" framing from an autonomous sprint** — the sprint agent will often frame rendering as out-of-scope to reduce its own task size. The human reviewer or the PR pipeline must enforce the rendering-is-in-scope rule at review time.
-- **Closing sub-issues before the parent is verified** — if a parent issue has user-facing acceptance criteria, the parent should not be closed until at least one component that renders the feature to the user is merged.
+- **Closing sub-issues before the parent is verified** — if a parent issue has user-facing acceptance criteria, the parent should not be closed until the user can actually see or interact with the feature through the normal product UI (not just that "a file exists that could render it").
 
 ## Related Patterns
 
