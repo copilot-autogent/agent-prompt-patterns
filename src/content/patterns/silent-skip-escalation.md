@@ -60,7 +60,7 @@ on successful execution after skips:
 
 **Key design decisions:**
 
-1. **`WARN_EVERY` corresponds to real time, not tick count.** A good default is `Math.max(2, Math.ceil(15 / tickIntervalMinutes))` — an escalation approximately every 15 minutes of continuous skipping. At 1-min ticks, that's 15. At 5-min ticks, that's 3. The `Math.max(2, ...)` guard ensures at least 2 consecutive skips before escalation so that one transient skip never immediately triggers a warn; for tick intervals ≥ 15 min this guard keeps the debug-first intent intact.
+1. **`WARN_EVERY` corresponds to real time, not tick count.** A good default is `Math.max(2, Math.ceil(15 / tickIntervalMinutes))` — an escalation approximately every 15 minutes of continuous skipping. At 1-min ticks that's 15; at 5-min ticks that's 3; at 15-min+ ticks the `Math.max(2, ...)` floor gives 2, meaning the second consecutive skip escalates (already 30+ min of missed execution — appropriate). The guard prevents WARN_EVERY=1, which would escalate on the very first skip and defeat the "transient skips stay quiet" design goal.
 
 2. **The debug path is preserved, not replaced.** Transient skips stay quiet. The pattern adds escalation for persistence — it does not make every skip noisy. This is the critical distinction from "just log at warn level always."
 
@@ -75,10 +75,10 @@ class MyScheduler {
   private _consecutiveSkips = 0;
 
   async tick(): Promise<void> {
-    if (await this.sessionPool.isBusy()) {
+    if (this.sessionPool.isBusy()) {
       this._consecutiveSkips++;
       const WARN_EVERY = Math.max(2, Math.ceil(15 / this.tickIntervalMinutes));
-      if (this._consecutiveSkips % WARN_EVERY === 0) {
+      if (this._consecutiveSkips % WARN_EVERY === 0 && this._consecutiveSkips > 0) {
         const minutes = Math.floor(this._consecutiveSkips * this.tickIntervalMinutes);
         log.warn(
           `Skipping tick — session pool busy for ~${minutes}min ` +
@@ -138,7 +138,7 @@ counter conflates unrelated conditions and produces misleading "consecutive" esc
 - The session pool entered a persistent-busy state
 - 107 consecutive tick skips over 1h47m: all at `log.debug` level, all invisible in production logs
 - Scheduled tasks queued but never executed; users saw no output
-- Fix: added `_consecutiveSkips` counter with `WARN_EVERY = Math.ceil(15 / tickIntervalMinutes)` threshold; added recovery log; added `log.warn` escalation
+- Fix: added `_consecutiveSkips` counter with `WARN_EVERY = Math.ceil(15 / tickIntervalMinutes)` threshold (production code), recovery log, and `log.warn` escalation — this pattern documents the lesson learned and recommends the improved `Math.max(2, Math.ceil(15 / tickIntervalMinutes))` variant to prevent escalation on the very first skip at long tick intervals
 - Pattern promoted to PLAYBOOK rule: "Self-Skip Early-Returns Must Escalate"
 
 **Evidence level: strong** — production incident with a specific duration (1h47m), clear root cause, and a deployed fix. The fix has been running in production and the warning pattern has successfully surfaced subsequent transient pool contention events that were resolved before becoming outages.
