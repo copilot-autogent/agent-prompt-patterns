@@ -77,7 +77,7 @@ class MyScheduler {
   async tick(): Promise<void> {
     if (this.sessionPool.isBusy()) {
       this._consecutiveSkips++;
-      const WARN_EVERY = Math.max(2, Math.ceil(15 / this.tickIntervalMinutes));
+      const WARN_EVERY = Math.max(2, Math.ceil(15 / (this.tickIntervalMinutes || 1))); // guard: tickIntervalMinutes must be positive
       if (this._consecutiveSkips % WARN_EVERY === 0 && this._consecutiveSkips > 0) {
         const minutes = Math.floor(this._consecutiveSkips * this.tickIntervalMinutes);
         log.warn(
@@ -113,20 +113,24 @@ In agent task prompts, instruct the agent to track and escalate:
 ```
 ## Skip Escalation (required for any early-return path)
 
-Track each distinct skip reason with its own counter in memory topic `<task-name>-skip-log`.
+Track each distinct skip reason with its own current count in memory topic `<task-name>-skip-state`
+(key-value: reason → consecutive_skip_count). Separate from an append-only log — counter state
+and log entries serve different purposes.
 
 If you exit early because a precondition is unmet (resource busy, rate limited, lock held):
-1. Record the skip: append `{ date, reason, count }` to `<task-name>-skip-log`.
-2. Read the current consecutive skip count for this specific reason from the log.
-3. Compute WARN_INTERVAL as approximately 3 consecutive skips for tasks that run every few
+1. Read the current consecutive skip count for this specific reason from `<task-name>-skip-state`.
+2. Increment: new_count = (current_count ?? 0) + 1.
+3. Write new_count back to `<task-name>-skip-state` for this reason.
+4. Compute WARN_INTERVAL as approximately 3 consecutive skips for tasks that run every few
    minutes, or 2 skips for tasks that run every 15+ minutes.
-4. If count % WARN_INTERVAL == 0 (and count > 0): post a visible warning with the reason,
+5. If new_count % WARN_INTERVAL == 0 (and new_count > 0): post a visible warning with the reason,
    skip count, and approximate elapsed time, then exit.
-5. Otherwise: exit silently (this is the transient-skip path — do not alert).
-6. On any successful run after skips: log recovery ("recovered after N skips for reason X")
-   and reset the count for that reason to 0.
+6. Otherwise: exit silently (this is the transient-skip path — do not alert).
 
-Never silently skip without updating the skip log. Use per-reason counters — a shared
+On any successful run after skips: for each reason whose count > 0, log recovery
+("recovered after N skips for reason X") and reset that count to 0 in `<task-name>-skip-state`.
+
+Never silently skip without updating the skip state. Use per-reason counters — a shared
 counter conflates unrelated conditions and produces misleading "consecutive" escalations.
 ```
 
