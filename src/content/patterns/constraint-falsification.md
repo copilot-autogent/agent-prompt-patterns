@@ -17,7 +17,7 @@ The engine was prebuilt and bundled. The compiler absence was irrelevant. An ent
 
 **Three compounding failure modes:**
 
-1. **Testing a proxy for absence, not the capability itself.** `which g++` tests one way to obtain an engine (compile from source). Its absence doesn't imply the capability is unavailable. Prebuilt binary, package install, remote API, and already-bundled artifact are all independent sufficient conditions — any one of them suffices. Absence of one sufficient condition proves nothing.
+1. **Testing a proxy for absence, not the capability itself.** `which g++` tests one way to obtain an engine (compile from source). Its absence doesn't imply the capability is unavailable. Prebuilt binary, package install, already-bundled artifact, and (when local execution is not a strict requirement) remote API are all potentially sufficient alternatives — absence of one path proves nothing about the others.
 
 2. **Anchoring on "blocked" and building upward.** Once a constraint is accepted, every dependent plan item inherits it without re-verification. The wrong premise silently propagates — and the cost scales with how many items are built on it.
 
@@ -35,7 +35,7 @@ This pattern applies whenever an agent:
 It is particularly important for: toolchain availability checks, API capability probes, environment setup verification, and any scenario where a "blocked" conclusion would reroute significant subsequent work.
 
 **Do not apply this pattern to:**
-- Situations where the failure mode is clearly not a proxy-absence error (e.g., HTTP 401 on an authenticated API is not a proxy for authentication capability — it is direct evidence)
+- Situations where the failure mode is clearly not a proxy-absence error (e.g., HTTP 401 on an authenticated API is direct evidence that the current credentials or scopes are insufficient — not a proxy for the feature being absent. Note: it does not prove the feature is unavailable with corrected credentials, but it is direct evidence of an auth boundary, not a missing-path error.)
 - Trivial checks where the cost of being wrong is negligible (no plan items depend on the conclusion)
 
 ## Solution
@@ -98,7 +98,7 @@ Dependent plan items: [N items may proceed]
 
 Accepting a limitation feels productive — it produces a clear path forward (the workaround). Falsifying it takes 30 seconds. This asymmetry is dangerous: the 30-second test that falsifies a false constraint is far cheaper than the 5-issue roadmap built on it.
 
-**Decision rule:** Before treating any "blocked" conclusion as load-bearing, ask: "What single **read-only or safe** command would prove this wrong?" If you can answer that question, run it. Prefer probes that don't create side effects: version/handshake checks, read-only queries, dry-run modes, and protocol-level exchanges. Reserve write-mode or cost-incurring tests for after a safe probe confirms the capability exists. Note that executing any binary — even for a read-only handshake — carries its own trust assumption; verify the binary's origin before using it as a falsification probe in untrusted environments.
+**Decision rule:** Before treating any "blocked" conclusion as load-bearing, ask: "What direct check would prove this wrong — either a read-only probe, a safe dry-run, or (if the capability requires mutation) the minimal mutating test?" Prefer probes that don't create permanent side effects: version/handshake checks, read-only queries, dry-run modes. For capabilities that can only be validated through a write (webhook delivery, permissioned mutation), plan for the minimal mutating test rather than substituting a shallow proxy. Note that executing any binary — even for a read-only handshake — carries its own trust assumption; verify the binary's origin before using it as a falsification probe in untrusted environments.
 
 ## Evidence
 
@@ -124,9 +124,10 @@ The same error class appears whenever an agent tests a sufficient-but-not-necess
 | `which g++` | Can I compile from source? | Run the engine: `printf 'usi\nquit\n' \| /usr/local/bin/engine` |
 | `which ffmpeg` | Is ffmpeg on PATH? | Process a minimal input: `ffmpeg -f lavfi -i nullsrc=d=1 -f null -` |
 | `pip show pandas` | Is pandas recorded as installed? | Execute the target operation: `python -c "import pandas; pandas.read_csv('/dev/null')"` |
-| `curl …/v2/feature` returns 404 | Is this exact endpoint present? | Try the actual operation on a known-safe/read-only resource; a 404 on one path is direct evidence for that path but not for the feature at alternate paths or versions |
 
-In each case, the proxy absence proves nothing about the actual capability.
+In each of these cases, the proxy absence proves nothing about the actual capability — a different sufficient path may exist.
+
+**A related but distinct error: path-specific 404 over-generalized.** A 404 from `curl …/v2/feature` is direct evidence that specific endpoint is absent — it is not a proxy-absence error. The mistake here is over-generalizing direct evidence: "endpoint A doesn't exist" → "feature X is unavailable" without checking alternative paths or API versions. The pattern's Step 1 applies equally: try the capability (e.g., via a documented endpoint) rather than inferring absence from one negative result.
 
 **Documented as a PLAYBOOK rule** (June 2026): "Falsify 'Can't / Blocked' Claims by ATTEMPTING the Capability — Not Testing a Proxy for Its Absence." The rule was added after the YaneuraOu incident and is tracked in the autogent project's operational playbook.
 
