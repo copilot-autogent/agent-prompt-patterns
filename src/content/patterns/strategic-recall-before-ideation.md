@@ -61,20 +61,20 @@ Particularly important when:
 ```
 MANDATORY FIRST STEP (before scanning the live site):
 1. recall_memory("[project]-manifest") — read the synthesis and research sections
-2. recall_memory any other synthesis topics known for this project (competitive analysis, user research, domain synthesis)
+2. For other synthesis topics: recall_memory("[project] synthesis"),
+   recall_memory("[project] analysis"), recall_memory("[project] user feedback")
+   (use keyword search; exact topic names vary by memory backend)
 3. List the strategic opportunities visible in synthesis memory
-4. File at least one strategic proposal per synthesis topic that implies a capability gap
+4. If synthesis topics exist: file at least one strategic proposal per topic
+   that implies a capability gap
 5. THEN scan the live site for polish/data quality improvements
 6. Tag each proposal: [strategic] / [polish] / [data-quality]
-7. Verify: at least 30% of proposals are tagged [strategic]
+7. If synthesis topics were found: verify ≥30% are tagged [strategic].
+   If NO synthesis topics exist or all are flagged stale: skip the floor,
+   document "no synthesis available this run", and proceed with polish/data-quality.
 ```
 
-**Synthesis topic discovery** (when topic names aren't known):
-```
-recall_memory("[project] synthesis") → scan results for research summaries
-recall_memory("[project] analysis") → competitive or domain analysis
-recall_memory("[project] user feedback") → user need synthesis
-```
+> **Note on recall_memory behavior:** The keyword-search queries above work with semantic/FTS backends. On exact-match-only backends, enumerate known topic names explicitly (e.g. `recall_memory("realestate-competitive-analysis-2025")`). The pattern is backend-agnostic; adjust discovery strategy to what your memory system supports.
 
 ## Evidence
 
@@ -100,7 +100,7 @@ Compared agent trace for realestate-ideation (scanned site → filed 5 polish is
 **Cost**: Adds a recall step that takes 1–2 model calls at the start of each ideation run. Small cost relative to the value of strategic proposals.
 
 **Watch out for**:
-- **Recall of stale synthesis:** If synthesis memory hasn't been updated since a major pivot, recalling it will surface outdated opportunities. Add a timestamp check: "if this synthesis is >60 days old, flag as potentially stale before proposing."
+- **Recall of stale synthesis:** If synthesis memory hasn't been updated since a major pivot, recalling it will surface outdated opportunities. Add a date header to each synthesis topic (e.g., `## Last Updated: 2026-06-01`) and check it at recall time. When a topic lacks an explicit date — common in older notes — treat it as potentially stale and flag it rather than skipping it: "This synthesis has no date header; treat proposals from it as lower-confidence." If your memory backend exposes a modification timestamp via `ls ~/.autogent/memory/` or similar, that provides an independent signal.
 - **Flooding the backlog with unvalidated strategic proposals:** Require that each strategic proposal include a 2-sentence rationale connecting the synthesis finding to a concrete user value or competitive advantage. This filters out noise.
 - **Ignoring the 30% floor in fast runs:** When the task prompt is under velocity pressure, the synthesis recall step tends to be skipped first. Treat the 30% floor as a hard gate, not a soft goal.
 
