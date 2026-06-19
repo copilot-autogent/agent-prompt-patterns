@@ -88,9 +88,11 @@ Rate this explanation 1-3:
 Briefly explain your rating and identify the specific weakest element (W1 through W5 if applicable).
 ```
 
+**Use a different model or prompt family for the clarity reviewer than the one used for generation.** A reviewer from the same model family as the generator can inherit the same register blind spots (W1, W5) and produce a false sense of validation — see [Multi-Model Persona Lenses](/agent-prompt-patterns/patterns/multi-model-persona-lenses) for model-pool selection guidance.
+
 Filter out ratings of 1 and return the content to the generation step with the reviewer's diagnosis. Cap at **2 total generation attempts per explanation** (1 original + 1 retry) — if the score remains 1 after the retry, log and surface for manual review rather than looping indefinitely.
 
-**Important:** after each rewrite, re-run the accuracy gate before the next clarity pass. Clarity rewrites can introduce factual regressions if the generation prompt is loosened to prioritize accessibility.
+**After each rewrite:** (a) re-run the accuracy gate before the next clarity pass — clarity rewrites can introduce factual regressions if the generation prompt is loosened to prioritize accessibility; (b) if the rewrite passes clarity but fails the accuracy re-check, discard the rewrite and escalate for manual authoring — don't continue the retry loop in a state where clarity and accuracy are in conflict.
 
 > **Note on the score-2 threshold:** A score of 2 is an acceptable minimum for production pipelines where latency and cost matter. If the use case requires deep learning (not just comprehension), tighten the threshold to reject score-2 as well. The tradeoff: stricter thresholds increase latency and cost but raise the floor on explanation quality.
 
@@ -114,8 +116,11 @@ Start with W1 and W5 — they cost one additional prompt sentence each and direc
 - Post-hoc analysis confirmed all five weaknesses (W1–W5) present in the same session
 - Multi-model code review did not flag any of the weaknesses — the explanations were factually accurate
 
-**Cross-domain confirmation (Agent Prompt Patterns site):**
-- W1 (academic tone in pattern summaries) and W5 (assumes reader knows CoT/ReAct terminology) confirmed present in this site's own content — not shogi-specific weaknesses
+**Cross-domain confirmation (Agent Prompt Patterns site, reviewed 2026-06-18):**
+- W1 (academic/encyclopedic register in pattern summaries) confirmed present — several pattern descriptions defaulted to formal prose that assumes a practitioner reader
+- W5 (unexplained terminology) confirmed present — cross-references to CoT, ReAct, and other concepts appear without first-mention definitions
+- Specific examples: the [Proactivity Injection](/agent-prompt-patterns/patterns/proactivity-injection) and [Multi-Model Persona Lenses](/agent-prompt-patterns/patterns/multi-model-persona-lenses) summaries both exhibit W1 on first read
+- Observation pinned to this review date; content may be updated to address W1/W5 in subsequent sprints
 
 **Evidence level: emerging for the overall pattern; moderate for the failure-mode taxonomy.** The W1–W5 taxonomy and the factual-accuracy ≠ pedagogical-clarity distinction are derived from one structured dogfood session and corroborated by cross-domain observation; the failure mode is well-supported. However, the proposed clarity-review step (step 4) has not yet been run at scale with measured outcome improvement — its effectiveness is structurally plausible but empirically unconfirmed. The frontmatter reflects `emerging` to accurately represent the intervention's validation status. Once a validation loop (see [Empirical Validation Loop](/agent-prompt-patterns/patterns/empirical-validation-loop)) produces measured comprehension-score data, the evidence level can be upgraded.
 
