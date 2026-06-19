@@ -34,7 +34,7 @@ This pattern applies to any agent workflow that generates explanatory content fo
 - Educational app content (flashcards, puzzle explanations, exercise feedback)
 - AI-annotated reports intended for non-specialist readers (factor analysis summaries, subsidy eligibility explanations, market commentary)
 
-**NOT applicable to:** Pure information retrieval (factual Q&A where correctness is the metric), code generation (the compiler is the clarity gate), or data transformation (no human reader).
+**NOT applicable to:** Pure information retrieval (factual Q&A where correctness is the metric), pure code generation where the output is machine-executed (the runtime/compiler is the arbiter; though note that AI-generated code *comments and documentation* are in scope for this pattern), or data transformation pipelines with no human reader.
 
 The pattern is most valuable when: (1) the target audience has a specific expertise level different from the model's default register, (2) the content involves choices among alternatives, and (3) the content uses specialized terminology.
 
@@ -83,12 +83,14 @@ You are reviewing this explanation for pedagogical clarity, NOT factual accuracy
 Target audience: [persona and expertise level]
 Rate this explanation 1-3:
   1 = The reader would be confused or lost
-  2 = The reader would follow the words but not deeply understand
+  2 = The reader would follow with some effort and mostly understand the core point
   3 = The reader would genuinely understand and be able to apply this
 Briefly explain your rating and identify the specific weakest element (W1 through W5 if applicable).
 ```
 
-Filter out ratings below 2 and return the content to the generation step with the reviewer's diagnosis.
+Filter out ratings of 1 and return the content to the generation step with the reviewer's diagnosis. Cap retries at **2 attempts per explanation** — if a score of 1 persists after 2 retries, log and surface for manual review rather than looping indefinitely.
+
+> **Note on the score-2 threshold:** A score of 2 is an acceptable minimum for production pipelines where latency and cost matter. If the use case requires deep learning (not just comprehension), tighten the threshold to reject score-2 as well. The tradeoff: stricter thresholds increase latency and cost but raise the floor on explanation quality.
 
 ### 5. Sequence fixes by effort
 
@@ -113,7 +115,7 @@ Start with W1 and W5 — they cost one additional prompt sentence each and direc
 **Cross-domain confirmation (Agent Prompt Patterns site):**
 - W1 (academic tone in pattern summaries) and W5 (assumes reader knows CoT/ReAct terminology) confirmed present in this site's own content — not shogi-specific weaknesses
 
-**Evidence level: moderate.** The five-weakness taxonomy (W1–W5) is derived from one structured dogfood session and corroborated by cross-domain observation. The pedagogical clarity reviewer step has not yet been run at scale with measured outcome improvement. The pattern is promoted from `emerging` to `moderate` because the failure mode is structurally distinct from accuracy failures and the fix mechanisms are tractable.
+**Evidence level: moderate — for the failure-mode taxonomy.** The W1–W5 taxonomy and the factual-accuracy ≠ pedagogical-clarity distinction are derived from one structured dogfood session and corroborated by cross-domain observation; the failure mode is well-supported. However, **the proposed clarity-review step (step 4) has not yet been run at scale with measured outcome improvement** — its effectiveness is structurally plausible but empirically emerging. The pattern is categorized as `moderate` for the problem diagnosis; treat the fix prescription as `emerging` until a validation loop (see [Empirical Validation Loop](/agent-prompt-patterns/patterns/empirical-validation-loop)) provides measured outcome data.
 
 ## Tradeoffs
 
