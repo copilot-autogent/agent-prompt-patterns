@@ -2,6 +2,7 @@
 title: "Strategic Context Injection at the Feeder Layer"
 category: "task-design"
 evidenceLevel: "strong"
+slug: "strategic-feeder-injection"
 summary: "In a feeder → scheduler → executor pipeline, inject strategic context recall into the feeder step — not the scheduler or executor. Feeders that read only the current system state produce tactical-only candidate queues; strategic opportunities exist in past research topics and never surface unless explicitly recalled at the point where candidates are generated."
 relatedPatterns: ["strategic-recall-before-ideation", "dispatcher-pattern", "feedback-loop-via-memory", "observer-actor-separation"]
 tags: ["strategy", "memory", "pipeline", "feeder", "task-design", "backlog", "recall", "multi-agent"]
@@ -17,13 +18,13 @@ The cause is structural. Past strategic analyses (competitive research, domain s
 
 **Empirical data (June 2026, n=27 candidates across 6 projects):**
 
-| Project type | Strategic candidates | Tactical/polish candidates |
-|---|---|---|
-| Feature/data products (4 projects) | 0–10% | 80–100% |
-| Content-first product (1 project) | ~40% | ~50% |
-| Cross-project average | ~15% | ~70% |
+| Project type | Count | Strategic | Tactical/polish | Data-quality |
+|---|---|---|---|---|
+| Feature/data products | 5 | 0–10% | 80–100% | 0–20% |
+| Content-first product | 1 | ~40% | ~50% | ~10% |
+| **Cross-project average** | **6** | **~15%** | **~70%** | **~15%** |
 
-The content-first project outlier (40% strategic) is explained structurally: for content-first pipelines, proposing new content *is* the strategic action, so the feeder produces strategic candidates by default. For feature/data/UX products, the feeder must explicitly retrieve the strategic context that the live system doesn't expose.
+The content-first outlier (40% strategic) is explained structurally: for content-first pipelines, proposing new content *is* the strategic action, so the feeder produces strategic candidates by default. For feature/data/UX products, the feeder must explicitly retrieve the strategic context that the live system doesn't expose.
 
 ## Context
 
@@ -72,13 +73,15 @@ Mandatory feeder preamble — execute before scanning the live system:
 
 3. For each successfully retrieved topic, note:
    - Key insight
-   - Timing constraint (if any — "window closes Q3", "competitor ships Q2")
+   - Last-updated date (check for an explicit date header or metadata);
+     topics with no date or older than 90 days → mark as stale
+   - Timing constraint (if any — "window closes Q3 2026")
    - Applicability to this project
 
 4. Classify retrieved insights into candidate proposals:
    - Trust primitives (P0): data accuracy, freshness, provenance
    - Strategic differentiation (P1): unique capability, timing-bound
-     opportunity, insight from synthesis with explicit source cite
+     opportunity, insight from synthesis with explicit source citation
    - Tactical polish (P2): incremental UX or cosmetic improvement
 
 5. THEN scan the current system state for additional P0/P2 candidates.
@@ -88,9 +91,10 @@ Mandatory feeder preamble — execute before scanning the live system:
 
 Once candidates are assembled, validate the distribution before passing the queue to the scheduler:
 
-- **≥1 strategic (P1)** candidate with explicit source citation, regardless of total queue size. For queues of ≥10 candidates, aim for ≥30% P1.
+- **≥1 strategic (P1) candidate when synthesis was available**, regardless of total queue size. For queues of ≥10 candidates, aim for ≥30% P1.
 - At least **1 cross-domain connection** (an insight that applies a finding from one domain to this project's opportunity space), when cross-domain synthesis was retrieved and is applicable — do not fabricate a cross-domain link to hit this target.
-- Any **timing-bound opportunity** must include the window explicitly (`"window closes: Q3 2026"`).
+- Any **timing-bound opportunity** must include the window explicitly (e.g., `"window closes: Q3 2026"`).
+- **Stale synthesis** (no date header, or older than 90 days): include the proposal if the insight is still plausible, but add `[lower-confidence: source undated/stale]` to the candidate's source citation. Downstream reviewers can decide whether to graduate it.
 
 If strategic storage returned no content this run, note this explicitly in the candidate queue output and default to P0/P2 candidates. "No synthesis available this run" is an acceptable feeder output; silently producing 100% tactical candidates is not.
 
@@ -114,7 +118,7 @@ Candidate queue output:
 ```
 Strategic storage retrieved:
 - [project]-competitive-analysis: Competitor A missing real-time data
-  layer; timing window 6–12 months. Source: competitive-analysis-Q2-2026.
+  layer; timing window 6–12 months from now. Source: competitive-analysis-Q2-2026.
 - [project]-user-feedback-synthesis: Users describe "trust gap" — they
   want to see data provenance before acting. Source: user-interviews-run-14.
 
@@ -123,8 +127,8 @@ Candidate queue output:
      (source: user-feedback-synthesis; "trust gap" blocking action on
      primary CTA — timing-bound: pre-Q3 launch)
 [P1] Real-time data layer prototype
-     (source: competitive-analysis; window closes: Q1 2027 — competitor
-     roadmap visible)
+     (source: competitive-analysis; window closes: ~H1 2027 based on
+     competitor roadmap signals)
 [P0] Validate that data refreshes are completing
 [P2] Fix broken chart label on dashboard
 [P2] Improve mobile layout for search results
@@ -146,11 +150,11 @@ Fix the feeder. The scheduler and executor should remain unmodified (subject to 
 
 **Empirical audit, June 2026 (n=27 issues, 6 projects):**
 
-- 4 of 6 projects: 0% strategic candidates in the active candidate queue despite 2–4 strategic-relevant synthesis topics present in persistent storage for each
+- 5 of 6 projects: 0–10% strategic candidates in the active candidate queue despite 2–4 strategic-relevant synthesis topics present in persistent storage for each
 - Cross-project average: 15% strategic, 70% polish/tactical, 15% data-quality
 - Exception (content-first project, 40% strategic): structurally explained — see Context section
 
-**Agent trace comparison (realestate-radar project):**
+**Agent trace comparison (one feature/data product in the audit):**
 - Feeder run without recall: scanned live site → filed 5 polish candidates; 0 strategic
 - Persistent storage contained a topic with 4 strategic capability gaps (timing features, provenance display) — findable via keyword search, never retrieved
 - Feeder run after strategic recall mandated: retrieved the topic → filed 2 P1 candidates with explicit source citations; remaining 3 polish candidates unchanged
@@ -168,10 +172,10 @@ The failure was not that synthesis didn't exist — it did. The failure was that
 
 **Watch out for**:
 
-- **Stale synthesis**: Retrieved storage may be months old. Require a recency check — if a synthesis topic has no timestamp or is >90 days old, flag proposals from it as lower-confidence. Strategic windows change; last year's competitive gap may be filled.
+- **Stale synthesis**: Retrieved storage may be months old. Require a recency check — if a synthesis topic has no timestamp or is >90 days old, flag proposals from it as `[lower-confidence: source undated/stale]` in the candidate output (see Step 2). Strategic windows change; last year's competitive gap may be filled.
 - **Fabricated citations**: Requiring a source citation for each P1 candidate is a hard gate. Agents under velocity pressure will invent plausible-sounding citations. Validate that the cited location was actually retrieved this run and the specific claim appears in it. Cross-domain connections fabricated to hit the target ratio are detectable by the same test.
 - **Feeder scope inflation**: The recall step should surface insights; it should not trigger new synthesis runs. If no synthesis exists, note this and proceed — do not have the feeder perform research inline. Research is a separate pipeline step.
-- **Raw user data in candidates**: Only recall synthesized/aggregated user feedback outputs. Propagating raw user-research details (unredacted interview notes, verbatim feedback) into candidate proposals and downstream tasks creates privacy exposure and document bloat. Synthesis outputs are the right unit.
+- **Raw user data in candidates**: Only recall synthesized/aggregated user feedback outputs. Propagating raw user-research details into candidate proposals creates privacy exposure and document bloat. Synthesis outputs are the right unit.
 - **Storage error vs. no synthesis**: A read failure is an operational incident, not an acceptable "no synthesis" state. Distinguish the two explicitly: a successful search that finds nothing → "no synthesis this run"; a storage read that errors or returns partial data → log the error, surface it as an alert, and consider whether to abort the feeder run or proceed with reduced recall.
 
 **Interaction with content-first pipelines**: For projects where content *is* the product (blogs, educational tools, research publications), the feeder is inherently strategic — new content = new differentiated value. This pattern's value is highest for feature/data/UX products where the live system surface is separable from the strategic opportunity space.

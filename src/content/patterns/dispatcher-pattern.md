@@ -3,7 +3,7 @@ title: "Dispatcher Pattern"
 category: "multi-agent"
 evidenceLevel: "strong"
 summary: "Use a pure dispatcher agent that only reads context and spawns actor agents — never does the work itself. Dispatchers that do work lose parallelism, accumulate context debt, and serially block on tasks that could run concurrently."
-relatedPatterns: ["observer-actor-separation", "proactivity-injection"]
+relatedPatterns: ["observer-actor-separation", "proactivity-injection", "strategic-feeder-injection"]
 tags: ["multi-agent", "dispatcher", "parallelism", "spawning", "task-design", "ephemeral-agents"]
 ---
 
@@ -101,3 +101,4 @@ The secondary finding: dispatcher prompts are dramatically simpler than single-a
 
 - **[Observer-Actor Separation](/agent-prompt-patterns/patterns/observer-actor-separation)** — the dispatcher is the "decide" layer between observer and actors; this pattern defines the dispatcher's specific responsibilities and constraints
 - **[Proactivity Injection](/agent-prompt-patterns/patterns/proactivity-injection)** — dispatchers can apply proactivity injection to surface proposals alongside spawning work items
+- **[Strategic Context Injection at the Feeder Layer](/agent-prompt-patterns/patterns/strategic-feeder-injection)** — when the dispatcher's candidate queue is dominated by tactical polish, the fix is upstream: inject strategic context into the feeder step that populates the queue

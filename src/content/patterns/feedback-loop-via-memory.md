@@ -3,7 +3,7 @@ title: "Feedback Loop via Memory"
 category: "feedback-loops"
 evidenceLevel: "strong"
 summary: "Give recurring agents a manifest in persistent memory with an explicit feedback section. Agents check it at the start of every sprint and prioritize feedback over backlog. Without this, agents operate in backlog-tunnel-vision mode indefinitely."
-relatedPatterns: ["position-over-wording", "observer-actor-separation"]
+relatedPatterns: ["position-over-wording", "observer-actor-separation", "strategic-feeder-injection"]
 tags: ["memory", "feedback", "sprint", "manifest", "recurring-tasks", "product-ownership"]
 ---
 
@@ -101,3 +101,4 @@ The pattern also exposed a secondary benefit: manifests provide a **state recove
 
 - **[Position Over Wording](/agent-prompt-patterns/patterns/position-over-wording)** — the feedback-check directive must be in the mandatory first block, not buried at the end
 - **[Observer-Actor Separation](/agent-prompt-patterns/patterns/observer-actor-separation)** — the manifest is the durable handoff medium between observer and actor agents
+- **[Strategic Context Injection at the Feeder Layer](/agent-prompt-patterns/patterns/strategic-feeder-injection)** — synthesis written back to persistent memory by this pattern is what the feeder retrieves to generate strategic candidates; the two patterns compose across the pipeline

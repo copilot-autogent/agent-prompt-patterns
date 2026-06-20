@@ -3,7 +3,7 @@ title: "Observer-Actor Separation"
 category: "task-design"
 evidenceLevel: "strong"
 summary: "Split observe, decide, and act into separate agent tasks. A single agent doing all three produces shallow observation, premature decisions, and tunnel-visioned action."
-relatedPatterns: ["dispatcher-pattern", "feedback-loop-via-memory", "position-over-wording"]
+relatedPatterns: ["dispatcher-pattern", "feedback-loop-via-memory", "position-over-wording", "strategic-feeder-injection"]
 tags: ["task-design", "multi-agent", "standup", "separation-of-concerns", "scheduling"]
 ---
 
@@ -90,3 +90,4 @@ The pattern also resolved a secondary problem: standup prompts kept growing as m
 - **[Dispatcher Pattern](/agent-prompt-patterns/patterns/dispatcher-pattern)** — the dispatcher role is a specialized application of the pure dispatcher pattern
 - **[Feedback Loop via Memory](/agent-prompt-patterns/patterns/feedback-loop-via-memory)** — observer writes to memory; actors read from it — the feedback loop connects the two
 - **[Position Over Wording](/agent-prompt-patterns/patterns/position-over-wording)** — observer prompts must front-load the "read-only, no actions" constraint or actors sneak into the observer phase
+- **[Strategic Context Injection at the Feeder Layer](/agent-prompt-patterns/patterns/strategic-feeder-injection)** — the feeder is the observer layer responsible for candidate generation; this pattern specifies how it should retrieve strategic context before scanning the live system
