@@ -67,7 +67,11 @@ Mandatory feeder preamble — execute before scanning the live system:
 2. Handle retrieval results:
    - Topics found and returned → proceed to step 3
    - Topics found but empty or unreadable → log as "storage read error"
-     and surface as an operational incident, not as "no synthesis"
+     and surface as an operational incident, not as "no synthesis".
+     For a total read failure (all strategic storage unreachable), abort the
+     feeder run and reschedule rather than emitting a silently-degraded
+     tactical-only queue. For partial failures (some topics unreachable),
+     proceed with successfully-retrieved content and note which topics failed.
    - No topics found after a genuine search → note "no synthesis
      available this run" and continue; this is expected on first runs
 
@@ -91,7 +95,7 @@ Mandatory feeder preamble — execute before scanning the live system:
 
 Once candidates are assembled, validate the distribution before passing the queue to the scheduler:
 
-- **≥1 strategic (P1) candidate when synthesis was available**, regardless of total queue size. For queues of ≥10 candidates, aim for ≥30% P1.
+- **≥1 strategic (P1) candidate when applicable synthesis was retrieved** (content successfully returned, relevant to this project, and at least partially non-stale), regardless of total queue size. For queues of ≥10 candidates, aim for ≥30% P1. Stale-only synthesis does not trigger this floor — only add P1 candidates from stale sources if the insight is plausibly still valid, tagged as `[lower-confidence: source undated/stale]`.
 - At least **1 cross-domain connection** (an insight that applies a finding from one domain to this project's opportunity space), when cross-domain synthesis was retrieved and is applicable — do not fabricate a cross-domain link to hit this target.
 - Any **timing-bound opportunity** must include the window explicitly (e.g., `"window closes: Q3 2026"`).
 - **Stale synthesis** (no date header, or older than 90 days): include the proposal if the insight is still plausible, but add `[lower-confidence: source undated/stale]` to the candidate's source citation. Downstream reviewers can decide whether to graduate it.
@@ -176,7 +180,7 @@ The failure was not that synthesis didn't exist — it did. The failure was that
 - **Fabricated citations**: Requiring a source citation for each P1 candidate is a hard gate. Agents under velocity pressure will invent plausible-sounding citations. Validate that the cited location was actually retrieved this run and the specific claim appears in it. Cross-domain connections fabricated to hit the target ratio are detectable by the same test.
 - **Feeder scope inflation**: The recall step should surface insights; it should not trigger new synthesis runs. If no synthesis exists, note this and proceed — do not have the feeder perform research inline. Research is a separate pipeline step.
 - **Raw user data in candidates**: Only recall synthesized/aggregated user feedback outputs. Propagating raw user-research details into candidate proposals creates privacy exposure and document bloat. Synthesis outputs are the right unit.
-- **Storage error vs. no synthesis**: A read failure is an operational incident, not an acceptable "no synthesis" state. Distinguish the two explicitly: a successful search that finds nothing → "no synthesis this run"; a storage read that errors or returns partial data → log the error, surface it as an alert, and consider whether to abort the feeder run or proceed with reduced recall.
+- **Storage error vs. no synthesis**: A read failure is an operational incident, not an acceptable "no synthesis" state. Distinguish the two explicitly: a successful search that finds nothing → "no synthesis this run"; a storage read that errors or returns partial data → log the error, surface it as an alert, abort the feeder on total failure or continue with reduced recall on partial failure.
 
 **Interaction with content-first pipelines**: For projects where content *is* the product (blogs, educational tools, research publications), the feeder is inherently strategic — new content = new differentiated value. This pattern's value is highest for feature/data/UX products where the live system surface is separable from the strategic opportunity space.
 
