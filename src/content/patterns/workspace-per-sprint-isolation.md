@@ -40,35 +40,43 @@ The pattern does NOT apply to intentionally shared workspaces where multiple age
 **Key the working directory to the task, not to the repository.**
 
 ```
-/tmp/<repo>-<issueNumber>-dev   ✅  unique per sprint
-/tmp/<repo>-dev                 ❌  shared, collision-prone
+/tmp/<repo>-<taskId>-dev   ✅  unique per sprint
+/tmp/<repo>-dev            ❌  shared, collision-prone
 ```
+
+The task identifier can be an issue number, a sprint ID, or any token that is unique to the unit of work being performed. For sprints that retry or resume the same issue, append a run counter (`<issueNumber>-run2`) to ensure retries don't collide with a lingering previous attempt.
 
 Apply this rule in three places:
 
-**1. Sprint prompt templates**: Every sprint prompt that includes a `git clone` command must embed the issue or task number in the clone path. Do not allow the path to be a runtime default derived only from the repo name.
+**1. Sprint prompt templates**: Every sprint prompt that includes a `git clone` command must embed the task identifier in the clone path. For issue-backed tasks, use the issue number. For non-issue-backed tasks, use the sprint or task ID passed by the supervisor at dispatch time. Do not allow the path to be a runtime default derived only from the repo name.
 
 ```bash
-# ✅ correct
+# ✅ correct (issue-backed task)
 WORK_DIR="/tmp/${REPO}-${ISSUE_NUMBER}-dev"
 git clone <url> "$WORK_DIR"
 cd "$WORK_DIR"
 
-# ❌ incorrect
+# ✅ correct (task-backed, non-issue)
+WORK_DIR="/tmp/${REPO}-${TASK_ID}-dev"
+git clone <url> "$WORK_DIR"
+cd "$WORK_DIR"
+
+# ❌ incorrect (shared, collision-prone)
 WORK_DIR="/tmp/${REPO}-dev"
 git clone <url> "$WORK_DIR"
 cd "$WORK_DIR"
 ```
 
-**2. Supervisor dispatch logic**: The orchestrator that spawns sprint agents must pass the issue/task number to each sprint as a parameter, and must use it as part of the working directory path. If the supervisor uses a template with a fixed directory, the template is the bug.
+**2. Supervisor dispatch logic**: The orchestrator that spawns sprint agents must pass the task identifier to each sprint as a parameter, and must use it as part of the working directory path. If the supervisor uses a template with a fixed directory, the template is the bug. Supervisors that generate task identifiers (e.g., sprint IDs) must include those identifiers in the spawned agent's prompt context.
 
 **3. Cleanup step**: The sprint's final action, on any exit path (success, failure, or cancellation), must remove its isolated working directory:
 
 ```bash
-rm -rf "/tmp/${REPO}-${ISSUE_NUMBER}-dev"
+# Guard against empty variable before rm -rf
+[[ -n "$REPO" && -n "$ISSUE_NUMBER" ]] && rm -rf "/tmp/${REPO}-${ISSUE_NUMBER}-dev"
 ```
 
-Cleanup must be unconditional. Accumulated clone directories fill disk, and a stale directory from a previous sprint run can be mistaken for a live working tree by a subsequent sprint on the same issue.
+The guard prevents accidental deletion of unexpected paths if either variable is unset or empty. Cleanup must be unconditional with respect to sprint outcome. Accumulated clone directories fill disk, and a stale directory from a previous sprint run can be mistaken for a live working tree by a subsequent sprint on the same issue.
 
 ### Why branch isolation is insufficient
 
@@ -87,8 +95,10 @@ A sprint can defensively verify isolation at the start of its working session:
 cd "$WORK_DIR"
 git status --short
 # Expected: empty output (clean working tree)
-# Any output indicates contamination from a prior or concurrent sprint
+# Any output indicates leftover state from a prior sprint run on this directory
 ```
+
+This check detects leftover files from a previous (failed or interrupted) sprint that used the same working directory path — for example, a retry of the same issue number that did not clean up after itself. It does **not** protect against a race where two agents both start with a clean directory and then proceed concurrently; for that scenario, working-directory isolation itself is the protection (two agents with distinct paths cannot contaminate each other, regardless of timing).
 
 If `git status` shows unexpected files, the sprint should stop, log the contamination, and alert rather than proceeding. Proceeding silently propagates the contamination into a PR.
 
