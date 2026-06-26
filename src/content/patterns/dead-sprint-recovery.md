@@ -42,11 +42,11 @@ Apply this decision sequence when a sprint produces no completion notification w
 
 **Step 1: Query open PRs and branches for the task.**
 
-Before spawning any replacement, check whether a PR or branch for this task already exists. Use the issue number as the primary discriminator — it is injected into branch names and sprint prompts and is the most stable identifier:
+Before spawning any replacement, check whether a PR or branch for this task already exists. Use the issue number as the primary discriminator — it is injected into branch names and sprint prompts and is the most stable identifier. Match the full `feat/<issue-number>-` prefix to avoid false positives (e.g., issue #71 matching a branch for issue #171):
 
 ```
 open_prs = list_pull_requests(state="open")
-task_pr = find_by(open_prs, head_branch contains "<issue-number>")
+task_pr = find_by(open_prs, head_branch starts_with "feat/<issue-number>-")
 # Fallback: check whether the expected branch exists on the remote
 branch_exists = remote_branch_exists("feat/<issue-number>-*")
 ```
@@ -66,17 +66,27 @@ git checkout pr-head
 npm ci && npm test && npm run build   # or equivalent for the stack
 ```
 
+Also check that the PR is still mergeable (no merge conflicts with the current base branch). A branch that was green when the agent died may have accumulated conflicts with main in the interim. Use the PR's `mergeable_state` field or attempt a local merge-check before committing to merge:
+
+```bash
+git fetch origin main:main
+git merge-tree $(git merge-base HEAD main) main HEAD
+# non-empty CONFLICT output → branch has drifted; do not squash-merge without resolving
+```
+
 If tests fail, the artifact is not green. Document what fails, open a new sprint with a targeted fix scope, and do not merge the broken PR.
 
 If tests pass, treat the work as complete unless there is specific reason to doubt correctness.
 
 **Step 3: Self-review the diff.**
 
-The automated review tool will return `skipped_already_reviewed` if it has already posted a marker comment on the current head SHA. In this case, identify what has been reviewed and what remains unreviewed:
+The automated review tool will return `skipped_already_reviewed` if it has already posted a marker comment on the current head SHA. Note that this proves only that a marker was posted — not that the review ran to completion or produced findings. After an agent or tool crash, the marker comment may exist even if the review was interrupted mid-run. In this case, identify what has been reviewed and what remains unreviewed:
 
 ```bash
 # Find the last automated review SHA (from the review_pr marker comment on the PR)
-git diff <last-reviewed-sha>..<head-sha> -- src/
+# Do not scope to a subdirectory — include all paths to catch changes in
+# package.json, lockfiles, CI config, migrations, or generated assets
+git diff <last-reviewed-sha>..<head-sha>
 ```
 
 If this delta is **empty** (the agent died without pushing any commits since the last automated review), the automated review already covered the full current state. In this case, check the PR for any unresolved review comments from that automated review — address those or explicitly accept them before merging.
@@ -85,9 +95,19 @@ If the delta is **non-empty** (the agent pushed commits after the last automated
 
 For methodology or computation code (evaluators, data pipelines, statistical samplers), read the core logic against the spec — passing tests do not catch verdict-corrupting bugs.
 
-**Step 4: Merge if green.**
+**Step 4: Verify CI and merge if green.**
 
-If tests pass and the self-review finds no blocking issues, squash-merge the PR:
+Before squash-merging, confirm CI has completed successfully on the current head SHA. Do not rely on tests passing locally — CI may run additional checks (security audits, deployment previews, integration tests) that local runs skip:
+
+```
+# Check CI status via the check-runs API (not the legacy statuses API)
+check_runs = GET /repos/{owner}/{repo}/commits/{head-sha}/check-runs
+require all(cr.conclusion == "success" for cr in check_runs)
+```
+
+If CI is pending, wait for it to complete before merging. If CI is failing on the recovered PR, treat it as a partially-broken artifact and spawn a targeted fix sprint rather than force-merging.
+
+If CI is green, squash-merge the PR:
 
 ```
 merge_pull_request(method="squash")
