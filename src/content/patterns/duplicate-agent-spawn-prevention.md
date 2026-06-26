@@ -3,7 +3,7 @@ title: "Duplicate Agent Spawn Prevention"
 category: "multi-agent"
 evidenceLevel: "strong"
 summary: "Agent tracking systems are eventually-consistent caches, not mutexes. They can report 'no active agents' while an agent is mid-flight in a silent review/refinement loop. Before spawning a replacement or supplementary agent, verify the expected artifact — not the roster. If the artifact exists and is still being updated, an agent is live. Wait rather than spawn."
-relatedPatterns: ["staggered-task-spawning", "sprint-continuity", "dispatcher-pattern", "side-effect-verification"]
+relatedPatterns: ["staggered-task-spawning", "sprint-continuity", "dispatcher-pattern", "side-effect-verification", "circuit-breaker"]
 tags: ["multi-agent", "spawning", "deduplication", "concurrency", "liveness", "artifact", "roster", "working-tree"]
 ---
 
@@ -74,17 +74,18 @@ Set a concrete wait threshold: if the artifact has not been updated in more than
 
 ```
 Before spawning agent for task T:
-  artifact = find_artifact(T)            # e.g., PR for branch
+  artifact = find_artifact(T)                 # e.g., PR for branch
+  age = now - artifact.last_updated           # age of last update
   if not artifact:
-    spawn(T)                             # nothing exists yet; safe to spawn
-  elif artifact.last_updated < 5min:
-    wait()                               # live agent; do not spawn
+    spawn(T)                                  # nothing exists yet; safe to spawn
+  elif age < 5min:
+    wait()                                    # recently updated; agent is live
   elif has_completion_signal(T):
-    act_on_artifact(artifact)            # completed; no spawn needed
-  elif artifact.last_updated < 15min:
-    wait()                               # uncertain; waiting bias applies
+    act_on_artifact(artifact)                 # completed; no spawn needed
+  elif age < 15min:
+    wait()                                    # uncertain; waiting bias applies
   else:
-    investigate_before_spawning(T)       # stalled; assess before deciding
+    investigate_before_spawning(T)            # stalled; assess before deciding
 ```
 
 ## Evidence
@@ -103,7 +104,7 @@ Both eph-10 and eph-17 now owned the same working directory (`/tmp`) and branch.
 
 The PR's head SHA had been advancing throughout eph-10's refinement loop — the artifact check would have revealed the live agent in under 5 seconds.
 
-**Counterfactual**: Had the supervisor queried the PR's head SHA before spawning — a single API call — it would have seen a commit pushed 8 minutes prior. Applying the 5-minute threshold, eph-17 would not have been spawned. The 49-minute eph-10 run would have completed cleanly, with no secondary bugs.
+**Counterfactual**: Had the supervisor queried the PR's head SHA before spawning — a single API call — it would have seen a commit pushed 8 minutes prior. This falls in the 5–15 minute "uncertain" band, triggering the waiting bias. eph-17 would not have been spawned. The 49-minute eph-10 run would have completed cleanly, with no secondary bugs.
 
 **Roster lag quantified**: In the same incident, the gap between eph-10's last roster-visible action and its actual termination was approximately 47 minutes. During this window, the roster correctly showed "no active agents" while an agent was actively working. Roster absence was a false negative for 96% of the agent's actual runtime.
 
