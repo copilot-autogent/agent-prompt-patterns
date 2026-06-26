@@ -75,6 +75,10 @@ GET /repos/{owner}/{repo}/commits/{sha}/check-runs
 
 Require every required check's `conclusion` to be `"success"`, `"neutral"`, or `"skipped"`. Non-required, informational checks may produce other conclusions without blocking a merge. If any required check has `status !== "completed"`, CI is still running — wait and retry. If any required check has `conclusion === "failure"` or `"timed_out"` or `"action_required"` or `"cancelled"`, CI has failed.
 
+> **Important**: The check-runs endpoint does not label which checks are *required*. The list includes all checks — required and optional alike. To determine which checks are required, consult the repository's branch protection rules (`GET /repos/{owner}/{repo}/branches/{branch}/protection`) or use `mergeable_state` as a composite signal that already accounts for required-vs-optional. When querying check-runs directly, applying the pass/fail logic to *all* checks (not just required ones) will block on optional failures. Use `mergeable_state: "clean"` as the simpler and more reliable alternative.
+
+> **Pagination**: The check-runs endpoint is paginated and includes history for reruns. Consume all pages and use only the most recent attempt for each check name to avoid false failures from an older attempt that was subsequently retried and passed.
+
 **For legacy status-based CI:**
 
 ```
@@ -131,11 +135,13 @@ GET /repos/{owner}/{repo}/pulls/{pull_number}
    - If total_count > 0 and state !== "success" → legacy CI is not green, do not merge
    - If total_count is 0 → no legacy hooks, not a CI signal (skip)
 
-4. If BOTH check-runs and combined-status return total_count: 0 → no CI signal exists.
-   Treat as a repo without CI. Flag for human review before merging unless explicitly pre-authorized.
+4. If BOTH check-runs and combined-status return total_count: 0 → no CI signal has been recorded yet.
+   This covers several distinct states: CI not configured, workflow did not trigger (event/path filter),
+   required check expected but not yet emitted, or quota exhausted. Do NOT treat this as "repo has no CI"
+   and proceed. Instead: BLOCK and flag for human review. Merging when no CI signal exists is unsafe.
 
 5. Treat total_count: 0 on the combined-status endpoint as "no legacy hooks" — never as "CI pending" or "CI passed."
-   Treat total_count: 0 on the check-runs endpoint as "CI has not run" — not as "CI passed."
+   Treat total_count: 0 on the check-runs endpoint as "CI has not run (yet or at all)" — not as "CI passed."
 ```
 
 ## Evidence
