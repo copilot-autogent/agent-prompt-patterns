@@ -48,24 +48,19 @@ It also applies to any CI platform with a similar two-tier API (e.g., separate "
 
 ## Solution
 
-**Before gating a merge on CI results, identify which API the CI system uses and query the correct endpoint.**
+**Before gating a merge on CI results, query both CI API surfaces and interpret the results correctly. The most reliable merge-readiness signal is `mergeable_state: "clean"` on the PR object; direct check-run inspection is a lower-level fallback with important edge cases.**
 
-### Step 1: Identify what CI surfaces are in use
+### Step 1: Understand what CI surfaces exist
 
-Check-runs and statuses are not mutually exclusive. A repository may have both, one, or neither. Query both surfaces and use what's there:
+Check-runs and statuses are not mutually exclusive. A repository may have both, one, or neither:
 
-```
-.github/workflows/*.yml present  →  GitHub Actions is configured
-                                    (check-runs will have results when workflows trigger)
-.travis.yml, .circleci/config.yml →  Legacy CI may also post to statuses endpoint
-Third-party CI bots / GitHub Apps →  May use check-runs without workflow files
-```
+- **GitHub Actions** → check-runs endpoint (workflows write check runs, not statuses)
+- **Legacy CI (Travis, older CircleCI, external bots writing to the statuses API)** → combined-status endpoint
+- **Third-party CI bots / GitHub Apps** → may write to check-runs without workflow files
 
-> **Caution**: Workflow files being present does not guarantee a workflow triggered for the PR's event (files may be disabled, path-filtered, or branch-filtered). Always treat the API response itself — not the file listing — as the authoritative signal. If check-runs exist and are complete, they are the ground truth; if check-runs are empty, you know a check run hasn't been recorded, but you cannot infer *why* without additional context.
+**The safe default**: always query both endpoints. The file listing (`.github/workflows/`) is a hint, not a guarantee — workflow files may be path-filtered, branch-filtered, or disabled for the event type. Always treat the API responses as ground truth.
 
-**The safe default**: always query the check-runs endpoint. For repos that also have required legacy status contexts (hybrid repos), query both.
-
-### Step 2: Query the authoritative endpoint
+### Step 2: Query both endpoints
 
 **For workflow-based CI (GitHub Actions):**
 
@@ -73,11 +68,13 @@ Third-party CI bots / GitHub Apps →  May use check-runs without workflow files
 GET /repos/{owner}/{repo}/commits/{sha}/check-runs
 ```
 
-Require every required check's `conclusion` to be `"success"`, `"neutral"`, or `"skipped"`. Non-required, informational checks may produce other conclusions without blocking a merge. If any required check has `status !== "completed"`, CI is still running — wait and retry. If any required check has `conclusion === "failure"` or `"timed_out"` or `"action_required"` or `"cancelled"`, CI has failed.
+Passing conclusions (do not block merge): `"success"`, `"neutral"`, `"skipped"`.
+Failing conclusions (block merge): `"failure"`, `"timed_out"`, `"action_required"`, `"cancelled"`, `"startup_failure"`, `"stale"`.
+Still running (wait and retry): any check with `status` of `"queued"` or `"in_progress"`.
 
-> **Important**: The check-runs endpoint does not label which checks are *required*. The list includes all checks — required and optional alike. To determine which checks are required, consult the repository's branch protection rules (`GET /repos/{owner}/{repo}/branches/{branch}/protection`) or use `mergeable_state` as a composite signal that already accounts for required-vs-optional. When querying check-runs directly, applying the pass/fail logic to *all* checks (not just required ones) will block on optional failures. Use `mergeable_state: "clean"` as the simpler and more reliable alternative.
+> **Important**: The check-runs endpoint does not label which checks are *required*. The list includes all checks — required and optional alike. Applying pass/fail logic to *all* checks will block on optional failures. To accurately determine required checks, consult the repository's branch protection rules — but note that org-level rulesets may require elevated permissions and are not fully represented in the branch protection endpoint. **Prefer `mergeable_state: "clean"` as the simpler alternative** — GitHub computes it from required checks, reviews, and conflicts, so it is more reliable than manual required-check discrimination.
 
-> **Pagination**: The check-runs endpoint is paginated and includes history for reruns. Consume all pages and use only the most recent attempt for each check name to avoid false failures from an older attempt that was subsequently retried and passed.
+> **Pagination and reruns**: The check-runs endpoint defaults to returning only the latest attempt per check (`filter=latest`). Do not page through history expecting multiple historical attempts — the default response shape is the current state. If you explicitly request `filter=all`, deduplicate by check name and use only the most recent attempt to avoid false failures from an older attempt that was subsequently retried and passed.
 
 **For legacy status-based CI:**
 
@@ -95,9 +92,9 @@ The combined-status endpoint (`/status`, singular) returns the composite `state`
 |----------|--------|----------------------|
 | Combined-status | `total_count: 0` | No legacy hooks configured — not a CI signal |
 | Check-runs | `total_count: 0` | No check runs recorded — CI may not have triggered (or quota exhausted) |
-| Check-runs | All required checks `conclusion: "success"/"neutral"/"skipped"` | CI passed |
-| Check-runs | Any required check `status: "in_progress"/"queued"` | CI still running — wait and retry |
-| Check-runs | Any required check `conclusion: "failure"/"timed_out"/"action_required"` | CI failed — do not merge |
+| Check-runs | All checks `conclusion: "success"/"neutral"/"skipped"` | CI passed (required-check discrimination still needed) |
+| Check-runs | Any check `status: "in_progress"/"queued"` | CI still running — wait and retry |
+| Check-runs | Any check `conclusion: "failure"/"timed_out"/"action_required"/"startup_failure"/"stale"` | CI failed — do not merge |
 
 ### Alternative: Use `mergeable_state`
 
@@ -114,7 +111,7 @@ GET /repos/{owner}/{repo}/pulls/{pull_number}
 → .mergeable_state === "unknown"   ? transient — recomputing, retry after 5–10s
 ```
 
-`mergeable_state: "clean"` is a reliable single-field alternative to directly querying check-runs, because GitHub computes it from the authoritative signal across all CI types. Use it when you want a single merge-readiness check rather than per-check granularity.
+`mergeable_state: "clean"` is a practical shortcut for merge-gating. GitHub computes it from required check-runs, required statuses, review approvals, and merge conflicts. It is an eventually-consistent field (may briefly show `"unknown"` while recomputing) and folds in more than CI state — it also reflects review requirements and branch divergence. This makes it useful as a single merge-readiness gate when you want a composite answer, but it is not a pure CI signal. For CI-specific diagnosis (understanding *why* CI failed), query check-runs directly.
 
 ### Prompt template for merge-gating tasks
 
@@ -126,10 +123,12 @@ GET /repos/{owner}/{repo}/pulls/{pull_number}
    - Combined-status: GET /repos/{owner}/{repo}/commits/{sha}/status
 
 2. Evaluate check-runs result:
-   - If any required check has status "in_progress" or "queued" → CI is running, WAIT and retry
-   - If any required check has conclusion "failure", "timed_out", "action_required", or "cancelled" → CI FAILED, do not merge
-   - If all required checks have conclusion "success", "neutral", or "skipped" → check-runs are green
-   - If total_count is 0 → no check runs recorded (may be intentional or quota-exhausted — see step 4)
+   - If any check has status "in_progress" or "queued" → CI is running, WAIT and retry
+   - If any check has conclusion "failure", "timed_out", "action_required", "cancelled",
+     "startup_failure", or "stale" → CI FAILED, do not merge
+   - If all checks have conclusion "success", "neutral", or "skipped" → check-runs are green
+     (note: this includes optional checks — use mergeable_state to confirm only required checks matter)
+   - If total_count is 0 → no check runs recorded (see step 4)
 
 3. Evaluate combined-status result:
    - If total_count > 0 and state !== "success" → legacy CI is not green, do not merge
@@ -160,15 +159,16 @@ All three failure modes — stalling, premature merge, and silent-red — share 
 
 ## Tradeoffs
 
-**Benefit**: Prevents premature merges on failing CI and eliminates indefinite blocking on a signal that will never arrive. A single discriminator check (workflow files present?) routes the agent to the correct API.
+**Benefit**: Prevents premature merges on failing CI and eliminates indefinite blocking on a signal that will never arrive. Querying both surfaces (check-runs + combined-status) routes the agent to the correct signal regardless of CI type.
 
-**Cost**: Requires one additional API call to identify CI type (or inspection of the repository's `.github/workflows/` directory). Adds a small amount of pre-merge logic. This cost is negligible relative to the cost of merging broken code.
+**Cost**: Requires two API calls per merge-gate check instead of one. Adds a small amount of pre-merge logic. This cost is negligible relative to the cost of merging broken code. The `mergeable_state` shortcut reduces this to one call when CI-specific diagnosis is not needed.
 
 **Watch out for**:
 - **Hybrid repos**: Some repositories use both GitHub Actions (check-runs) and legacy status hooks (e.g., third-party CI bots). In these cases, both endpoints may be relevant. Query both and require all checks to pass.
 - **`mergeable_state: "unknown"` false negatives**: Always retry on `"unknown"` with a brief wait (5–10s) before treating it as a failure. It is a transient compute state, not a permanent CI result.
 - **Check-run name changes**: If you are waiting for a specific named check (e.g., `"CI / build"`), a renamed workflow will cause the agent to wait indefinitely for the old name. Prefer checking that *all* checks passed rather than a specific named subset.
-- **Quota exhaustion**: When Actions quota is depleted, workflows never trigger — check-runs are also empty (`total_count: 0`). An empty check-runs result means "CI has not run," not "CI passed." Always require at least one completed check run before treating CI as green. When check-runs are empty and the PR is not to a trivially-CI-free repo, flag for human review.
+- **Quota exhaustion**: When Actions quota is depleted, workflows never trigger — check-runs are also empty (`total_count: 0`). An empty check-runs result means "CI has not run," not "CI passed." Treat an empty check-runs result as an unknown state requiring human review, unless the repository is explicitly configured with no CI (both check-runs and combined-status empty by design — flag and get confirmation before merging).
+- **Repos with no check-runs (status-only)**: Some repositories rely exclusively on legacy commit statuses and produce zero check runs. In these cases, `total_count: 0` on the check-runs endpoint is expected and benign — gating requires only that the combined-status endpoint reports `state: "success"` with `total_count > 0`.
 
 ## Related Patterns
 
