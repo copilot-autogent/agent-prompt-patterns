@@ -75,17 +75,18 @@ Set a concrete wait threshold: if the artifact has not been updated in more than
 ```
 Before spawning agent for task T:
   artifact = find_artifact(T)                 # e.g., PR for branch
-  age = now - artifact.last_updated           # age of last update
   if not artifact:
     spawn(T)                                  # nothing exists yet; safe to spawn
-  elif age < 5min:
-    wait()                                    # recently updated; agent is live
-  elif has_completion_signal(T):
-    act_on_artifact(artifact)                 # completed; no spawn needed
-  elif age < 15min:
-    wait()                                    # uncertain; waiting bias applies
   else:
-    investigate_before_spawning(T)            # stalled; assess before deciding
+    age = now - artifact.last_updated         # age since last artifact update
+    if has_completion_signal(T):
+      act_on_artifact(artifact)               # already completed; no spawn needed
+    elif age < 5min:
+      wait()                                  # recently updated; agent is live
+    elif age < 15min:
+      wait()                                  # uncertain; waiting bias applies
+    else:
+      investigate_before_spawning(T)          # stalled; assess before deciding
 ```
 
 ## Evidence
@@ -120,6 +121,7 @@ The PR's head SHA had been advancing throughout eph-10's refinement loop — the
 - **No completion signal ≠ dead**: Long refinement loops with automated review tools can run 15–45 minutes with no user-visible output. This is normal. Absence of a completion signal alone does not justify spawning.
 
 **Watch out for**:
+- **Artifact identity**: Ensure the artifact check is scoped to the current task instance, not just the artifact type. A stale PR from a previous attempt or a manually-created artifact with the same branch name will satisfy the existence check and incorrectly block a legitimate dispatch. Verify task-specific identity (e.g., PR branch matches the current issue's expected branch name) before treating existence as a liveness signal.
 - **Agents that complete tasks without creating expected artifacts**: If a task's success leaves no artifact (e.g., a monitoring task that only sends a notification), artifact absence is not meaningful. Restrict this pattern to tasks with clear, queryable output artifacts.
 - **Clock skew between environments**: If the agent and the supervisor run in different environments, `last_updated` timestamps may reflect different clocks. Use relative recency (age in minutes) rather than absolute timestamps where possible.
 - **Recovery vs. duplication**: When an agent is confirmed stalled (artifact stale >30 minutes, no process running, no completion signal), spawning a replacement is correct. The pattern prevents premature duplication, not legitimate recovery. See [Circuit Breaker](/agent-prompt-patterns/patterns/circuit-breaker) for stall-recovery escalation.
@@ -130,3 +132,4 @@ The PR's head SHA had been advancing throughout eph-10's refinement loop — the
 - **[Sprint Continuity](/agent-prompt-patterns/patterns/sprint-continuity)** — long-running sprints with early-milestone followed by refinement loops are the primary context where this pattern applies; sprint agents should write a clear completion signal to their thread to reduce the risk of being re-spawned.
 - **[Side-Effect Verification](/agent-prompt-patterns/patterns/side-effect-verification)** — confirms that an action actually happened by querying its observable side effect; this pattern applies the same principle to liveness detection: query the agent's side effect (the artifact) rather than the agent's self-reported state.
 - **[Dispatcher Pattern](/agent-prompt-patterns/patterns/dispatcher-pattern)** — orchestration layer that may trigger duplicate spawns; this pattern is a guard applied inside the dispatcher's pre-spawn check.
+- **[Circuit Breaker](/agent-prompt-patterns/patterns/circuit-breaker)** — provides the stall-recovery escalation path after the investigate step: when an agent is confirmed stalled (artifact stale >30 minutes, no active process, no completion signal), the circuit-breaker pattern determines when it is safe to terminate, reset, and re-dispatch rather than waiting indefinitely.
