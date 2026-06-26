@@ -74,15 +74,21 @@ Set a concrete wait threshold: if the artifact has not been updated in more than
 
 ```
 Before spawning agent for task T:
-  artifact = find_artifact(T)                 # e.g., PR for branch
+  artifact = find_artifact(T)                 # task-scoped: e.g., PR for this task's branch
   if not artifact:
-    spawn(T)                                  # nothing exists yet; safe to spawn
+    # NOTE: no artifact does not guarantee no agent — the agent may not
+    # have produced its first artifact yet. Apply a brief startup wait
+    # (1–2 min) before concluding the task is unstarted, especially for
+    # tasks dispatched in the last few minutes.
+    spawn(T)                                  # likely safe; no artifact yet
   else:
     age = now - artifact.last_updated         # age since last artifact update
     if has_completion_signal(T):
       act_on_artifact(artifact)               # already completed; no spawn needed
+    elif has_failure_signal(T):
+      recover_or_respawn(T)                   # agent failed; recovery path
     elif age < 5min:
-      wait()                                  # recently updated; agent is live
+      wait()                                  # recently updated; agent is likely live
     elif age < 15min:
       wait()                                  # uncertain; waiting bias applies
     else:
@@ -121,6 +127,8 @@ The PR's head SHA had been advancing throughout eph-10's refinement loop — the
 - **No completion signal ≠ dead**: Long refinement loops with automated review tools can run 15–45 minutes with no user-visible output. This is normal. Absence of a completion signal alone does not justify spawning.
 
 **Watch out for**:
+- **Non-agent artifact updates**: A PR's head SHA can advance due to a human push, a bot auto-fix, or the very second agent you are trying to prevent. Treat recency as a necessary condition for liveness, not a sufficient one. When the identity of the last committer matters (e.g., to confirm it was the expected agent), check the commit author before concluding the original agent is live.
+- **Pre-artifact phase**: An agent that has been dispatched but has not yet opened a PR or produced any artifact will not satisfy the existence check, and `spawn(T)` will fire. This is an inherent limitation: before any artifact exists, roster absence is the only signal available. Mitigate by applying a startup wait (1–2 minutes) before the first artifact check for recently-dispatched tasks, and by using dispatch-time records (e.g., noting in a task log the time a task was dispatched) to distinguish "never started" from "just started."
 - **Artifact identity**: Ensure the artifact check is scoped to the current task instance, not just the artifact type. A stale PR from a previous attempt or a manually-created artifact with the same branch name will satisfy the existence check and incorrectly block a legitimate dispatch. Verify task-specific identity (e.g., PR branch matches the current issue's expected branch name) before treating existence as a liveness signal.
 - **Agents that complete tasks without creating expected artifacts**: If a task's success leaves no artifact (e.g., a monitoring task that only sends a notification), artifact absence is not meaningful. Restrict this pattern to tasks with clear, queryable output artifacts.
 - **Clock skew between environments**: If the agent and the supervisor run in different environments, `last_updated` timestamps may reflect different clocks. Use relative recency (age in minutes) rather than absolute timestamps where possible.
