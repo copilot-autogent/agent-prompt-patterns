@@ -40,25 +40,29 @@ The pattern does NOT apply when the agent died before producing any artifact. If
 
 Apply this decision sequence when a sprint produces no completion notification within 2× its expected duration:
 
-**Step 1: Query open PRs for the task.**
+**Step 1: Query open PRs and branches for the task.**
 
-Before spawning any replacement, check whether a PR for this task already exists:
+Before spawning any replacement, check whether a PR or branch for this task already exists. Use the issue number as the primary discriminator — it is injected into branch names and sprint prompts and is the most stable identifier:
 
 ```
 open_prs = list_pull_requests(state="open")
-task_pr = find_by(open_prs, branch="feat/<issue>-*" OR title contains issue_title)
+task_pr = find_by(open_prs, head_branch contains "<issue-number>")
+# Fallback: check whether the expected branch exists on the remote
+branch_exists = remote_branch_exists("feat/<issue-number>-*")
 ```
 
-If no PR exists, the agent may not have reached the commit/PR phase. A brief additional wait (5–10 minutes) is warranted before re-spawning. If a PR exists, proceed to Step 2.
+If a PR exists, proceed to Step 2. If no PR exists but the expected branch exists, the agent may have pushed commits and died before opening the PR — clone the branch directly and assess the work (Step 2) rather than re-spawning. If neither exists, the agent died before producing any artifact; a brief additional wait (5–10 minutes) is warranted before re-spawning.
 
 **Step 2: Assess the work.**
 
-Clone the PR's head branch and run the existing test suite:
+Clone the PR's head branch using the PR head SHA or by fetching the PR ref directly — do not assume the source branch name maps to a remote ref (fork-based PRs or already-deleted branches will fail a plain checkout):
 
 ```bash
-git clone <repo> /tmp/recovery-<issue>
+# Prefer fetching by PR ref (works for fork PRs and deleted source branches)
+git clone <base-repo> /tmp/recovery-<issue>
 cd /tmp/recovery-<issue>
-git checkout <pr-head-branch>
+git fetch origin pull/<pr-number>/head:pr-head
+git checkout pr-head
 npm ci && npm test && npm run build   # or equivalent for the stack
 ```
 
@@ -68,14 +72,16 @@ If tests pass, treat the work as complete unless there is specific reason to dou
 
 **Step 3: Self-review the diff.**
 
-The automated review tool will return `skipped_already_reviewed` if it has already posted a marker comment on the current head SHA. In this case, manually inspect the delta:
+The automated review tool will return `skipped_already_reviewed` if it has already posted a marker comment on the current head SHA. In this case, identify what has been reviewed and what remains unreviewed:
 
 ```bash
 # Find the last automated review SHA (from the review_pr marker comment on the PR)
 git diff <last-reviewed-sha>..<head-sha> -- src/
 ```
 
-Focus on the delta, not the full diff. If the dead agent was in a refinement loop when it died, the uncommitted refinements are lost — the recoverable state is the last committed SHA. Verify the committed state satisfies the issue's requirements without relying on the lost refinements.
+If this delta is **empty** (the agent died without pushing any commits since the last automated review), the automated review already covered the full current state. In this case, check the PR for any unresolved review comments from that automated review — address those or explicitly accept them before merging.
+
+If the delta is **non-empty** (the agent pushed commits after the last automated review), manually inspect those commits. Also verify the full diff from main satisfies the issue requirements — earlier automated review comments may have been partially addressed.
 
 For methodology or computation code (evaluators, data pipelines, statistical samplers), read the core logic against the spec — passing tests do not catch verdict-corrupting bugs.
 
@@ -111,13 +117,16 @@ Merge SHA: <sha>
 ```
 No completion notification received after 2× expected duration:
   ↓
-  Does a PR for this task exist?
+  Does a PR (or branch) for this task exist? (use issue-number as discriminator)
   ├── No → wait 5–10 min, then re-spawn (agent died before producing artifact)
-  └── Yes → clone head branch, run tests
-              ├── Tests fail → spawn targeted fix sprint (do not merge broken PR)
-              └── Tests pass → self-review diff vs issue spec
-                              ├── Blocking issues found → open targeted fix PR
-                              └── No blocking issues → squash-merge, close issue
+  ├── Branch exists, no PR → fetch branch, run tests (agent died before PR creation)
+  └── PR exists → fetch via pull/<N>/head ref, run tests
+                  ├── Tests fail → spawn targeted fix sprint (do not merge broken PR)
+                  └── Tests pass → self-review diff vs issue spec
+                                  ├── Delta since last review is empty?
+                                  │   └── Check for unresolved automated review comments
+                                  ├── Blocking issues found → open targeted fix PR
+                                  └── No blocking issues → squash-merge, close issue
 ```
 
 ## Evidence
