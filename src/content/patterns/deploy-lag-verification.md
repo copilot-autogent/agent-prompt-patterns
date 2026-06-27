@@ -43,12 +43,13 @@ After merging a fix, verify two independent facts before declaring it active:
 
 **Check 1 — Is the fix in the running artifact?**
 
-Confirm the deployed artifact was built from a commit that includes the fix. `git log` in the deployment directory shows the *repository* state, which can differ from the *artifact* state if the code was updated but not rebuilt. The authoritative check is a content search in the compiled output:
+Confirm the deployed artifact was built from a commit that includes the fix. `git log` in the deployment directory shows the *repository* state, which can differ from the *artifact* state if the code was updated but not rebuilt. One practical check is a content search in the compiled output:
 
 ```bash
 # Compiled artifacts — search the built output for a symbol introduced by the fix:
 grep -rl 'newFunctionOrSymbol' /path/to/app/dist/
-# Absence means the build predates the fix.
+# Absence suggests the build predates the fix (but note: minification or tree-shaking
+# may rename symbols — use a stable string literal or unique constant when possible).
 ```
 
 For interpreted languages or deployments with embedded git metadata:
@@ -60,24 +61,21 @@ cd /path/to/app && git log --oneline -1
 # If they match AND the build step ran after this checkout, the artifact is current.
 ```
 
-Important: if the repository shows the merged SHA but the build step (`npm run build`, `tsc`, etc.) has not run since the checkout, the artifact is still stale.
+Important: if the repository shows the merged SHA but the build step (`npm run build`, `tsc`, etc.) has not run since the checkout, the artifact is still stale. Repository state and artifact state are distinct — always verify the artifact, not just the checkout.
 
-For compiled artifacts without embedded git metadata, a targeted content search works:
-
-```bash
-grep -rl 'newFunctionOrSymbol' /path/to/app/dist/
-```
-
-Absence means the build predates the fix.
+Note on squash/rebase merges: a squash merge produces a new commit SHA that differs from the original branch. Verify by checking for a distinctive symbol or log string introduced by the fix, not only by SHA equality.
 
 **Check 2 — Did the process restart after the artifact was built?**
 
 The process start timestamp must postdate the artifact build timestamp (or, at minimum, the fix's merge timestamp). A process running since before the artifact was built loaded pre-fix code regardless of what the repository now shows.
 
 ```bash
-# Find process start time from logs:
+# Find process start time from logs using application-specific startup markers:
 grep -E 'started|logged in|TaskScheduler started' /path/to/app.log | tail -1
 # → 2026-06-19T23:06:00Z TaskScheduler started
+# Note: adapt the grep pattern to your system's actual startup log message.
+# Log rotation or component-init messages with the same keywords can mislead;
+# use the earliest startup marker that only fires at process start, not during operation.
 
 # Compare against fix merge timestamp (from PR or git log):
 # → PR #647 merged 2026-06-20T00:53:00Z
@@ -103,13 +101,17 @@ Only the first row means the fix is active.
 ```
 After merging [fix], verify deployment before declaring it active:
 
-1. Check running artifact: [command to read embedded commit SHA or grep for key symbol]
-   → Must match merged commit [SHA]
+1. Check running artifact: [grep for a stable string/symbol introduced by the fix in the compiled output]
+   → Should be present; absence indicates the build predates the fix
+   → Note: if using SHA matching, squash/rebase merges produce a new SHA — verify content, not just SHA
 
-2. Check process start time: [command to grep process start from logs]
-   → Must be AFTER merge time [timestamp]
+2. Check process start time: [grep for process startup marker in logs]
+   → Must be AFTER artifact build time [timestamp] (or merge time if build is immediate)
+   → Note: adapt the grep pattern to your system's actual startup message
 
-If either check fails, the fix is merged but not deployed. Do not diagnose recurrences as "fix not working" until both checks pass.
+If either check fails, the fix is merged but not deployed.
+In multi-instance deployments, run both checks on every replica.
+Do not diagnose recurrences as "fix not working" until both checks pass on all instances.
 ```
 
 **Handling self-healing claims:**
@@ -120,7 +122,7 @@ If the system is supposed to auto-restart on failure, do not assume it did. Veri
 grep -E 'auto-restart|recoverClientOnce|health-check-triggered' app.log | tail -5
 ```
 
-Absence of these markers means the self-heal mechanism did not fire. The recovery — if it happened — was manual. Attribute it correctly.
+Absence of these markers in the logs is *evidence against* self-healing having fired, but is not conclusive — log rotation, renamed markers, or a silent crash before the marker was written can produce the same absence. Use log-absence as a strong signal to investigate further, not as definitive proof. Attribute recovery to manual intervention only when you also have positive evidence (a human-initiated restart command, a container rebuild timestamp, an ops note).
 
 ## Evidence
 
