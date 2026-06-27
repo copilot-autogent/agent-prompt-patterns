@@ -3,7 +3,7 @@ title: "Workspace-per-Sprint Isolation"
 category: "multi-agent"
 evidenceLevel: "strong"
 summary: "Each sprint agent must clone into a working directory uniquely keyed to its task or issue number (e.g., /tmp/<repo>-<issueNumber>-dev). Branch isolation is not sufficient: two git checkouts in the same directory clobber each other's staged and unstaged changes regardless of branch, producing contaminated commits that accidentally ship unreviewed work."
-relatedPatterns: ["staggered-task-spawning", "duplicate-agent-spawn-prevention", "sprint-continuity", "side-effect-verification"]
+relatedPatterns: ["staggered-task-spawning", "duplicate-agent-spawn-prevention", "sprint-continuity", "side-effect-verification", "sprint-completion-verification"]
 tags: ["multi-agent", "concurrency", "working-tree", "isolation", "git", "sprint", "working-directory", "contamination"]
 ---
 
