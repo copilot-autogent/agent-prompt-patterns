@@ -3,7 +3,7 @@ title: "Sprint Continuity"
 category: "feedback-loops"
 evidenceLevel: "strong"
 summary: "A recurring agent's session boundary is only as reliable as the handoff document it writes and reads. Structure your manifest to encode exactly the decisions, state, and open items the next session needs — nothing more. Agents that trust their own prior output run faster and make better decisions than agents that re-derive state from scratch."
-relatedPatterns: ["feedback-loop-via-memory", "context-window-budgeting", "pre-commit-planning-phase", "workspace-per-sprint-isolation"]
+relatedPatterns: ["feedback-loop-via-memory", "context-window-budgeting", "pre-commit-planning-phase", "workspace-per-sprint-isolation", "deploy-lag-verification"]
 tags: ["continuity", "memory", "handoff", "recurring", "sprint", "manifest", "state", "sessions"]
 ---
 

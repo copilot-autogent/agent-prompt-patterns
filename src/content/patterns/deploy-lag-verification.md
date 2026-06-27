@@ -106,8 +106,9 @@ After merging [fix], verify deployment before declaring it active:
    → Note: if using SHA matching, squash/rebase merges produce a new SHA — verify content, not just SHA
 
 2. Check process start time: [grep for process startup marker in logs]
-   → Must be AFTER artifact build time [timestamp] (or merge time if build is immediate)
-   → Note: adapt the grep pattern to your system's actual startup message
+   → Must be AFTER artifact build time [build timestamp]
+   → (If build is immediate post-merge, comparing against merge time [merge timestamp] is acceptable,
+      but if CI/build pipeline takes time, use the build completion time, not the merge time)
 
 If either check fails, the fix is merged but not deployed.
 In multi-instance deployments, run both checks on every replica.
