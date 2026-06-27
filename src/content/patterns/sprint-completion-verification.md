@@ -50,10 +50,9 @@ GET /repos/{owner}/{repo}/pulls/{pull_number}
 
 Confirm:
 - `merged` is `true` (not just `state === "closed"` — a PR can be closed without merging)
-- `merged_at` timestamp is within the sprint's runtime window (recent merge, not a stale PR)
-- `merged_by` matches the expected actor (sprint bot or automation account)
+- `merged_at` timestamp is within the sprint's runtime window (recent merge, not a stale PR from a previous cycle)
 
-If any check fails, treat the sprint as incomplete and apply the [Dead Sprint Recovery](/agent-prompt-patterns/patterns/dead-sprint-recovery) pattern — the work is on the branch and can be recovered without a full re-sprint.
+If either check fails, treat the sprint as potentially incomplete (see supervisor flow below for how to proceed).
 
 **For issue-based sprints:**
 
@@ -65,8 +64,15 @@ GET /repos/{owner}/{repo}/issues/{issue_number}
 
 Confirm:
 - `state` is `"closed"`
-- `closed_at` is recent
-- The most recent comment or state-change event references the resolution (not just a stale close from a previous cycle)
+- `closed_at` is recent (within the sprint's runtime window, not a stale close from a prior cycle)
+
+For additional context on the resolution (e.g., which PR triggered the close), query the issue's timeline separately:
+
+```
+GET /repos/{owner}/{repo}/issues/{issue_number}/timeline
+```
+
+Look for a `cross-referenced` or `closed` event with a recent timestamp referencing the expected pull request.
 
 **For supervisor agents (automated verification):**
 
@@ -75,11 +81,14 @@ After sprint completion notification:
 1. Parse completion message for pull request and issue references (PR numbers, issue URLs)
 2. For each reference, query the version control API for current state
 3. Compare API response fields against the claimed completion state
-4. If any mismatch:
-   a. Flag as incomplete
-   b. Check whether the artifact (branch, commits) exists and is green
-   c. If green artifact exists → invoke Dead Sprint Recovery
-   d. If no artifact → log as dropped work, schedule a re-sprint
+4. If mismatch detected:
+   a. Re-query after a short delay (5–10s) to rule out stale cache
+   b. Check whether the sprint agent is still live (recent activity in its thread)
+      — if still live, wait for its natural completion before acting
+      — if confirmed dead (no recent activity, session timed out), proceed to recovery
+   c. Check whether the artifact (branch, commits) exists and is green
+      — green artifact → apply Dead Sprint Recovery (verify-and-merge)
+      — no artifact → log as dropped work, schedule a re-sprint
 5. Only acknowledge completion after all state checks pass
 ```
 
@@ -112,7 +121,7 @@ A sprint agent completed 3 review rounds on a CLI monitoring tool feature. Runti
 
 Direct API inspection showed:
 - `merged: false`
-- `draft: true` (the PR had been marked ready-for-review but the merge call never executed)
+- `state: "open"` (the sprint had posted the completion summary but not executed the merge call)
 - Thread's last two tool calls: `issue_write` + `add_issue_comment` — the merge call was absent
 
 The PR had been open for 24 hours before manual inspection caught the mismatch. The fix was a direct merge call taking under 60 seconds. Total latency added by the missed verification: 24 hours.
