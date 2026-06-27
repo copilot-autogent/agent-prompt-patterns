@@ -66,13 +66,13 @@ Confirm:
 - `state` is `"closed"`
 - `closed_at` is recent (within the sprint's runtime window, not a stale close from a prior cycle)
 
-For additional context on the resolution (e.g., which PR triggered the close), query the issue's timeline separately:
+Then verify the close was caused by the expected sprint's pull request — another actor or unrelated PR could have closed the issue independently. Query the issue's timeline:
 
 ```
 GET /repos/{owner}/{repo}/issues/{issue_number}/timeline
 ```
 
-Look for a `cross-referenced` or `closed` event with a recent timestamp referencing the expected pull request.
+Find the `closed` event matching `closed_at` and confirm it references the expected pull request in `source.issue.pull_request` or a `cross-referenced` event immediately preceding it. If the close event lacks a link to the expected PR, the sprint may not have been the closing actor.
 
 **For supervisor agents (automated verification):**
 
@@ -87,7 +87,9 @@ After sprint completion notification:
       — if still live, wait for its natural completion before acting
       — if confirmed dead (no recent activity, session timed out), proceed to recovery
    c. Check whether the artifact (branch, commits) exists and is green
-      — green artifact → apply Dead Sprint Recovery (verify-and-merge)
+      — green artifact → apply [Dead Sprint Recovery](/agent-prompt-patterns/patterns/dead-sprint-recovery),
+        which includes conflict-checking, branch-protection requirements, and CI verification
+        before attempting to merge; do not merge directly from this flow
       — no artifact → log as dropped work, schedule a re-sprint
 5. Only acknowledge completion after all state checks pass
 ```
