@@ -3,7 +3,7 @@ title: "Duplicate Agent Spawn Prevention"
 category: "multi-agent"
 evidenceLevel: "strong"
 summary: "Agent tracking systems are eventually-consistent caches, not mutexes. They can report 'no active agents' while an agent is mid-flight in a silent review/refinement loop. Before spawning a replacement or supplementary agent, verify the expected artifact — not the roster. If the artifact exists and is still being updated, an agent is live. Wait rather than spawn."
-relatedPatterns: ["staggered-task-spawning", "sprint-continuity", "dispatcher-pattern", "side-effect-verification", "circuit-breaker", "workspace-per-sprint-isolation"]
+relatedPatterns: ["staggered-task-spawning", "sprint-continuity", "dispatcher-pattern", "side-effect-verification", "circuit-breaker", "workspace-per-sprint-isolation", "sprint-completion-verification"]
 tags: ["multi-agent", "spawning", "deduplication", "concurrency", "liveness", "artifact", "roster", "working-tree"]
 ---
 

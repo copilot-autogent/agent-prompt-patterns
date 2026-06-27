@@ -66,19 +66,17 @@ Confirm:
 - `state` is `"closed"`
 - `closed_at` is recent (within the sprint's runtime window, not a stale close from a prior cycle)
 
-Then verify the close was caused by the expected sprint's pull request — another actor or unrelated PR could have closed the issue independently. Query the issue's timeline:
+Then verify the close was caused by the expected sprint's pull request — another actor or unrelated PR could have closed the issue independently. Query the issue's event timeline and look for a close event that references the expected pull request. The exact API shape and field names vary by version control platform; the key assertion is that the closing event links to the sprint's PR, not to an unrelated action. If the close event cannot be matched to the expected PR, treat the completion as unconfirmed.
 
-```
-GET /repos/{owner}/{repo}/issues/{issue_number}/timeline
-```
-
-Find the `closed` event matching `closed_at` and confirm it references the expected pull request in `source.issue.pull_request` or a `cross-referenced` event immediately preceding it. If the close event lacks a link to the expected PR, the sprint may not have been the closing actor.
+Also check `state_reason` if the platform exposes it: a `"not_planned"` or rejected close satisfies `state === "closed"` but indicates the work was declined, not completed. Only `state_reason === "completed"` (or the platform's equivalent resolved/done reason) confirms successful sprint completion.
 
 **For supervisor agents (automated verification):**
 
 ```
 After sprint completion notification:
 1. Parse completion message for pull request and issue references (PR numbers, issue URLs)
+   — If parsing yields no references, fall back to querying open PRs/issues by
+     the sprint's issue number (use issue number as discriminator in branch/PR title)
 2. For each reference, query the version control API for current state
 3. Compare API response fields against the claimed completion state
 4. If mismatch detected:
