@@ -3,7 +3,7 @@ title: "Staggered Task Spawning"
 category: "multi-agent"
 evidenceLevel: "strong"
 summary: "When dispatching multiple concurrent agent tasks, stagger their start times by 3–5 minutes. Simultaneous spawning saturates session concurrency limits, produces silent failures with no retry, and leaves partially-complete work with no recovery path."
-relatedPatterns: ["dispatcher-pattern", "context-window-budgeting", "pre-commit-planning-phase"]
+relatedPatterns: ["dispatcher-pattern", "context-window-budgeting", "pre-commit-planning-phase", "workspace-per-sprint-isolation"]
 tags: ["multi-agent", "scheduling", "concurrency", "session-limits", "spawning", "reliability", "dispatch"]
 ---
 
