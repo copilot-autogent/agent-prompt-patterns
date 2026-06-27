@@ -19,7 +19,7 @@ Three failure signatures:
 
 **Silent working-tree contamination**: `git status` inside a shared directory shows changes from the other agent. The contaminating agent has no idea; it never ran `git status` before staging. The contaminated agent runs `git diff --staged` and the output looks plausible — it happens to include the right changes plus extras it doesn't recognize.
 
-**Branch isolation false safety**: The contaminating agent has already checked out its own branch. The contaminated agent checks out a different branch. Both operations succeed. Neither agent gets an error. The working tree still contains the other agent's modified files because `git checkout <branch>` only switches tracked files tracked by that branch's history — it does not discard untracked or unstaged changes from a different agent's work.
+**Branch isolation false safety**: The contaminating agent has already checked out its own branch. The contaminated agent checks out a different branch. Both operations succeed. Neither agent gets an error. The working tree still contains the other agent's modified files because `git checkout <branch>` only updates files tracked by that branch's history — it does not discard untracked files or unstaged modifications left by a different agent.
 
 **Unrecognized "bonus" shipping**: The contaminated PR's summary includes a "Bonus:" or "Also fixed:" section describing features the issue never requested. The reviewer approves it. The bonus features are live in production, linked to the wrong issue, with no corresponding test coverage from their intended sprint.
 
@@ -73,7 +73,8 @@ cd "$WORK_DIR"
 
 ```bash
 # Guard against empty variable before rm -rf
-[[ -n "$REPO" && -n "$ISSUE_NUMBER" ]] && rm -rf "/tmp/${REPO}-${ISSUE_NUMBER}-dev"
+# Works for both ISSUE_NUMBER and TASK_ID conventions:
+[[ -n "$REPO" && -n "$TASK_IDENTIFIER" ]] && rm -rf "/tmp/${REPO}-${TASK_IDENTIFIER}-dev"
 ```
 
 The guard prevents accidental deletion of unexpected paths if either variable is unset or empty. Cleanup must be unconditional with respect to sprint outcome. Accumulated clone directories fill disk, and a stale directory from a previous sprint run can be mistaken for a live working tree by a subsequent sprint on the same issue.
