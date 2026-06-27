@@ -2,7 +2,7 @@
 title: "Deploy-Lag Verification"
 category: "feedback-loops"
 evidenceLevel: "strong"
-summary: "Agents declare a fix 'live' immediately after merge, but code only takes effect when the runtime restarts with a rebuilt artifact. To avoid false-green incident diagnoses, an agent must verify two independent facts after every merge: (1) is the fix in the running artifact, and (2) did the process restart after the fix was built? Neither check alone is sufficient."
+summary: "After merging a fix, verify two facts before declaring it live: the artifact was rebuilt from the patched commit, and the process restarted after that build. Neither alone is sufficient."
 relatedPatterns: ["side-effect-verification", "empirical-validation-loop", "observe-resolve-pairing", "sprint-continuity"]
 tags: ["reliability", "verification", "deployment", "debugging", "incident-response", "false-green", "merge-vs-deploy"]
 ---
@@ -35,6 +35,7 @@ The pattern is especially important in systems where:
 - **The deployment pipeline is not fully automated**: Code must be compiled (`npm run build`, `tsc`, `go build`) and then the process manually restarted. A merge alone does not trigger this chain.
 - **Multiple agents share a production system**: One agent merges a fix while another monitors the system, creating a gap where the monitoring agent may never observe the deployment step.
 - **The self-healing mechanism is unverified**: The system may have a restart hook or health-check-triggered recovery, but that hook may itself have bugs. "It should restart itself" is not the same as "it did restart itself."
+- **Multi-replica or rolling deployments**: In systems with multiple instances (e.g., Kubernetes pods, load-balanced servers), verifying one instance is insufficient. Each replica loads its own copy of the artifact at startup. Confirm the check covers all instances, or use a fleet-wide deployment verification tool.
 
 ## Solution
 
@@ -42,19 +43,24 @@ After merging a fix, verify two independent facts before declaring it active:
 
 **Check 1 — Is the fix in the running artifact?**
 
-Compare the commit SHA embedded in the running process against the merged commit. The running process must reference a build that was created *after* the fix was merged.
+Confirm the deployed artifact was built from a commit that includes the fix. `git log` in the deployment directory shows the *repository* state, which can differ from the *artifact* state if the code was updated but not rebuilt. The authoritative check is a content search in the compiled output:
 
 ```bash
-# In the running deployment:
-cd /path/to/app && git log --oneline -1
-# → abc1234 fix: authentication token refresh
-
-# On the source repository:
-# github-list_commits sha=main (first result)
-# → abc1234 fix: authentication token refresh
+# Compiled artifacts — search the built output for a symbol introduced by the fix:
+grep -rl 'newFunctionOrSymbol' /path/to/app/dist/
+# Absence means the build predates the fix.
 ```
 
-If they differ, the artifact has not been rebuilt from the patched commit. The fix is not running.
+For interpreted languages or deployments with embedded git metadata:
+
+```bash
+# Check that the running checkout matches the merged commit:
+cd /path/to/app && git log --oneline -1
+# Compare against: github-list_commits sha=main (first result)
+# If they match AND the build step ran after this checkout, the artifact is current.
+```
+
+Important: if the repository shows the merged SHA but the build step (`npm run build`, `tsc`, etc.) has not run since the checkout, the artifact is still stale.
 
 For compiled artifacts without embedded git metadata, a targeted content search works:
 
@@ -64,20 +70,22 @@ grep -rl 'newFunctionOrSymbol' /path/to/app/dist/
 
 Absence means the build predates the fix.
 
-**Check 2 — Did the process restart after the fix was built?**
+**Check 2 — Did the process restart after the artifact was built?**
 
-The process start timestamp must postdate the merge timestamp. A process running since before the merge loaded pre-fix code regardless of what the repository now shows.
+The process start timestamp must postdate the artifact build timestamp (or, at minimum, the fix's merge timestamp). A process running since before the artifact was built loaded pre-fix code regardless of what the repository now shows.
 
 ```bash
 # Find process start time from logs:
 grep -E 'started|logged in|TaskScheduler started' /path/to/app.log | tail -1
 # → 2026-06-19T23:06:00Z TaskScheduler started
 
-# Compare against merge timestamp (from PR or git log):
+# Compare against fix merge timestamp (from PR or git log):
 # → PR #647 merged 2026-06-20T00:53:00Z
-
-# 23:06 < 00:53 → process started BEFORE the fix. Not running the patch.
+# Full comparison: 2026-06-19T23:06Z < 2026-06-20T00:53Z
+# → Process started BEFORE the merge. Not running the patch.
 ```
+
+Note: in environments where the build step is separate from the merge (e.g., merge triggers a CI pipeline that takes minutes), compare against the build completion time, not the merge time. A process that restarted immediately after merge but before the CI build finished is also running pre-fix code.
 
 **The two checks are jointly necessary:**
 
@@ -120,7 +128,7 @@ Multiple production incidents in an autonomous AI agent system (June 2026) provi
 
 **Incident A — Fix never deployed, bug misdiagnosed (PR #647, June 2026):**
 
-A critical authentication bug was patched and merged at 2026-06-20T00:53Z. A scheduled health check reported the bug recurring at 2026-06-21T06:00Z — 30+ hours later. Initial analysis concluded "the fix didn't work."
+A critical authentication bug was patched and merged at 2026-06-20T00:53Z. A scheduled health check reported the bug recurring at 2026-06-21T06:00Z — approximately 29 hours later. Initial analysis concluded "the fix didn't work."
 
 Root-cause reconstruction from process logs:
 - Process last restarted: 2026-06-19T23:06Z
@@ -144,7 +152,7 @@ The misattribution mattered because "self-healing worked" would have closed the 
 
 **Abstracted evidence statement:**
 
-In a production AI agent system, a critical authentication bug was patched and merged. A scheduled health check reported the bug recurring 30 hours later. Root-cause analysis found the patch had never been deployed — the process had last restarted 107 minutes *before* the patch was merged, and no artifact rebuild had occurred. The false "fix not working" diagnosis consumed significant investigation time that a two-step deploy-lag check would have saved in under a minute.
+In a production AI agent system, a critical authentication bug was patched and merged. A scheduled health check reported the bug recurring approximately 29 hours later. Root-cause analysis found the patch had never been deployed — the process had last restarted 107 minutes *before* the patch was merged, and no artifact rebuild had occurred. The false "fix not working" diagnosis consumed significant investigation time that a two-step deploy-lag check would have saved in under a minute.
 
 ## Tradeoffs
 
@@ -155,7 +163,7 @@ In a production AI agent system, a critical authentication bug was patched and m
 **When to skip**: Stateless deployments (serverless functions, containers rebuilt on every push, blue-green with automatic traffic cut) typically eliminate the deploy lag by design. In these environments, "merged = deployed" may be approximately true — verify that the deployment pipeline is actually configured this way before skipping the check.
 
 **Watch out for:**
-- **Checking only the repository, not the artifact**: `git log` in the repo shows what was merged; it does not show what was built. The artifact could be a stale pre-merge build even if the repository is at the latest commit.
+- **Checking only the repository, not the artifact**: `git log` in the deployment directory shows what commit was checked out; it does not show what was *compiled*. The artifact could be a stale pre-merge build even if the repository is at the latest commit. Verify the compiled output directly (grep for a key symbol, check the artifact's build timestamp).
 - **Checking only the artifact, not the process start time**: A post-merge build that hasn't been deployed yet will pass Check 1 but fail Check 2. The process must have started *after* the build that contains the fix.
 - **Trusting self-healing claims without log evidence**: Automated restart mechanisms fail silently. Always verify via log markers, not by inferring from "the service is up."
 
@@ -164,4 +172,4 @@ In a production AI agent system, a critical authentication bug was patched and m
 - **[Side-Effect Verification](/agent-prompt-patterns/patterns/side-effect-verification)** — the general principle: verify observable outcomes rather than trusting return values or status reports; deploy-lag verification is the specific application of this principle to the merge→deploy transition
 - **[Empirical Validation Loop](/agent-prompt-patterns/patterns/empirical-validation-loop)** — when monitoring for fix effectiveness, treat post-merge observations as a measurement, not a conclusion; verification requires checking deployment state before interpreting monitoring data
 - **[Observe-Resolve Pairing](/agent-prompt-patterns/patterns/observe-resolve-pairing)** — the "observe" step in incident response should include deployment state as a first-class observable; an undeployed fix is a known observable state, not an anomaly
-- **[Sprint Continuity](/agent-prompt-patterns/patterns/sprint-continuity)** — a sprint manifest that records "merged PR #47 at commit abc123 at 00:53Z" enables the next sprint to run deploy-lag verification without re-reading all logs; structured handoff reduces the cost of the two-step check
+- **[Sprint Continuity](/agent-prompt-patterns/patterns/sprint-continuity)** — a sprint manifest that records "merged at commit abc123 at 00:53Z" enables the next sprint to run deploy-lag verification without re-reading all logs; structured handoff reduces the cost of the two-step check
