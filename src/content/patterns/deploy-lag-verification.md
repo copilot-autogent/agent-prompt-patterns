@@ -48,8 +48,11 @@ Confirm the deployed artifact was built from a commit that includes the fix. `gi
 ```bash
 # Compiled artifacts — search the built output for a symbol introduced by the fix:
 grep -rl 'newFunctionOrSymbol' /path/to/app/dist/
-# Absence suggests the build predates the fix (but note: minification or tree-shaking
-# may rename symbols — use a stable string literal or unique constant when possible).
+# Absence suggests the build predates the fix.
+# Caveats: (1) minification or tree-shaking may rename symbols — use a stable
+# string literal or unique log message when possible; (2) grep over the entire
+# dist directory may match stale build artifacts, source maps, or non-active
+# release directories — scope the path to the artifact your process actually loads.
 ```
 
 For interpreted languages or deployments with embedded git metadata:
@@ -157,13 +160,15 @@ The misattribution mattered because "self-healing worked" would have closed the 
 
 In a production AI agent system, a critical authentication bug was patched and merged. A scheduled health check reported the bug recurring approximately 29 hours later. Root-cause analysis found the patch had never been deployed — the process had last restarted 107 minutes *before* the patch was merged, and no artifact rebuild had occurred. The false "fix not working" diagnosis consumed significant investigation time that a two-step deploy-lag check would have saved in under a minute.
 
+*Note*: The concrete PR numbers and timestamps above are from the authoring team's own incident history and are included here as anchors for the specific evidence. Teams adopting this pattern should document their own evidence with as much or as little specificity as their operational context allows.
+
 ## Tradeoffs
 
 **Benefit**: Eliminates a systematic false-green failure mode. Deploy-lag verification turns "the fix must not have worked" into "the fix is merged but not yet running" — a precise, actionable statement that points to the deployment step rather than the code.
 
 **Cost**: Requires access to process logs and the running deployment environment. In environments where the deployment is fully automated and verified by CI/CD tooling, this check is redundant — the pipeline already guarantees deploy-after-merge. Apply the pattern where the deployment pipeline has a manual step.
 
-**When to skip**: Stateless deployments (serverless functions, containers rebuilt on every push, blue-green with automatic traffic cut) typically eliminate the deploy lag by design. In these environments, "merged = deployed" may be approximately true — verify that the deployment pipeline is actually configured this way before skipping the check.
+**When to skip**: Fully automated deployment pipelines that verify rollout completion (e.g., Kubernetes rollout status checks, blue-green deployment with confirmed traffic cutover, serverless platforms where push atomically updates the running function) can make this check redundant — the pipeline already guarantees the new artifact is serving traffic. Apply the pattern when the deployment pipeline has a manual step, or when rollout verification is not part of the automated pipeline. Note: "containers rebuilt on every push" is not sufficient — rebuilding an image does not guarantee that running containers have restarted onto the new image.
 
 **Watch out for:**
 - **Checking only the repository, not the artifact**: `git log` in the deployment directory shows what commit was checked out; it does not show what was *compiled*. The artifact could be a stale pre-merge build even if the repository is at the latest commit. Verify the compiled output directly (grep for a key symbol, check the artifact's build timestamp).
