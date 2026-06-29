@@ -1,7 +1,7 @@
 ---
 title: "Belief-Entropy Checkpointing"
 category: "feedback-loops"
-evidenceLevel: "moderate"
+evidenceLevel: "emerging"
 summary: "Agents that save memory only at session end capture final state but lose decision rationale at earlier branch points. Successful agent trajectories show decreasing uncertainty about task state over time; failed ones show stagnant or increasing entropy. The pattern: checkpoint at high-uncertainty junctures — branch points, reversals, and unexpected outcomes — not only at session end."
 relatedPatterns: ["structured-handoff-header", "strategic-recall-before-ideation", "memory-read-before-write"]
 tags: ["memory", "checkpointing", "uncertainty", "decision-rationale", "session-state", "branch-points", "reversals"]
@@ -48,18 +48,20 @@ Three trigger conditions identify high-uncertainty junctures:
 
 | Trigger | What to save |
 |---------|-------------|
-| **Task branch point** | Two or more valid paths existed; one was chosen — record the chosen path *and why the others were rejected* |
-| **Reversal** | A prior decision turned out wrong — record what changed and what the corrected model of the system is |
-| **Unexpected outcome** | A result contradicts your model — record the inference you made, not the raw output that triggered it |
+| **Task branch point** | Two or more valid paths existed; one was chosen — record the chosen path, *why the others were rejected*, and the assumptions / system version under which that holds |
+| **Reversal** | A prior decision turned out wrong — record what changed, what the corrected model of the system is, and under what conditions the old model was incorrect |
+| **Unexpected outcome** | A result contradicts your model — record the inference you made, not the raw output that triggered it, and what system assumptions changed |
+
+Scoping every checkpoint with its governing assumptions is part of the required payload, not a post-hoc note. Future sessions use the scope to decide whether the checkpoint's conclusions still apply after the system has changed.
 
 **Dual-probe anchor question** — apply before every checkpoint write:
 
 1. **Progress component**: "Does this memory clearly encode what has been done / decided?"
-2. **Information-gap component**: "Does this memory clearly encode what still needs to happen?" *(For terminal saves where nothing remains, record that explicitly rather than leaving the question open.)*
+2. **Information-gap component**: "Does this memory clearly encode what still needs to happen?" *(For reversals and unexpected-outcome checkpoints where next steps are not yet known, record the updated model of the system rather than speculating. The probe is satisfied by "model updated: X is now known to be false" — it does not require a concrete action list.)*
 
 If either answer is "no" or "unclear", **expand the write** rather than truncating. A memory that answers only one probe is half a memory.
 
-**Summarize, don't paste verbatim.** Record the inference and the rationale, not raw tool output, API responses, or log snippets. Exception: short decision-critical artifacts (exact error codes, config keys, invariant names) that are retrieval anchors can be included — the goal is to avoid pasting noise, not to prevent precise identifiers that distinguish similar failures.
+**Summarize, don't paste verbatim.** Record the inference and the rationale, not raw tool output, API responses, or log snippets. Exception: short decision-critical artifacts (exact error codes, config keys, invariant names) that are retrieval anchors can be included — the goal is to avoid pasting noise, not to prevent precise identifiers that distinguish similar failures. **Always redact or omit credentials, PII, customer data, and sensitive paths** before writing to shared persistent memory — mid-session writes increase the surface area for accidental secret persistence.
 
 **Session-end saves remain valuable** — they capture the final state. But intermediate checkpoints capture the branching logic that final state alone cannot reconstruct. Both are better than either alone.
 
@@ -156,7 +158,7 @@ Both probes fail → expand before writing.
 
 - **Treating checkpoints as universally valid forever**: A checkpoint encodes the rationale under the assumptions and context that held *at the time it was written*. If the system changes materially (library update, schema migration, architecture pivot), old checkpoints should be re-evaluated rather than applied uncritically. Include enough context in the checkpoint (system version, key assumptions) to assess its continued validity.
 
-- **Mid-session writes in shared memory without read-before-write**: Belief-entropy checkpointing increases write frequency mid-session. In shared memory stores, this amplifies the risk of lost-update races. Always follow the Memory Read Before Write pattern — read the target location before writing, especially when writing mid-session rather than at session end.
+- **Mid-session writes in shared memory without read-before-write**: Belief-entropy checkpointing increases write frequency mid-session. In shared memory stores, this amplifies the risk of lost-update races. Always follow the Memory Read Before Write pattern — read the target location before writing, especially when writing mid-session rather than at session end. Note that read-before-write alone is not sufficient if two agents can concurrently read the same state and both proceed to write; for high-contention locations, prefer append-only writes or storage systems with version/CAS semantics.
 
 ## Related Patterns
 
