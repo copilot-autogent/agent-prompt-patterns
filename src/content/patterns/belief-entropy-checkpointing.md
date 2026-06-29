@@ -61,7 +61,7 @@ If either answer is "no" or "unclear", **expand the write** rather than truncati
 
 **Summarize, don't paste.** Record the inference and the rationale, not raw tool output, API responses, or log snippets. Verbatim output is noise that obscures the decision-relevant signal and may contain PII.
 
-**Session-end saves are still required** — but they capture the final state, not the why. Intermediate checkpoints capture the branching logic that the final state alone cannot reconstruct.
+**Session-end saves remain valuable** — they capture the final state. But intermediate checkpoints capture the branching logic that final state alone cannot reconstruct. Both are better than either alone.
 
 ### Branch-point checkpoint example
 
@@ -148,7 +148,7 @@ Both probes fail → expand before writing.
 
 - **Pasting raw output instead of inference**: A checkpoint that pastes a stack trace or API response is noise. What matters is what you *inferred* from the output: "The stack trace shows that X causes Y under Z condition." Summarize the inference.
 
-- **Assuming session-end saves are enough**: End saves are necessary but not sufficient. They capture the destination, not the route. The route is what the next session needs when it faces the same branching decision.
+- **Assuming session-end saves are enough**: End saves are useful but incomplete. They capture the destination, not the route. The route is what the next session needs when it faces the same branching decision.
 
 - **Writing probes in parallel with the actual write**: The dual-probe check is a gate, not a decoration. If probe 2 fails (unclear what still needs to happen), expanding the write before the task is done is preferable to reconstructing missing context from a partial save later.
 
