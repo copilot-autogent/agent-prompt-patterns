@@ -65,7 +65,7 @@ task:
 |---|---|---|
 | Meta-cron with idempotent per-tick work (review, ideation, monitoring, audit) | `false` | Fresh context prevents prior-tick bias |
 | Sprint agent with multi-session state (implement feature, fix bug) | `true` | Context continuity aids recovery across ticks |
-| One-shot `once` task | N/A | Single tick; setting has no effect |
+| One-shot `once` task | N/A | Single tick; setting has no effect. If manually re-run with the same session ID, the same contamination risk applies — treat it as a repeating cron. |
 
 ### Diagnostic signal
 
