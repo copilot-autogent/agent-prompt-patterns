@@ -1,7 +1,7 @@
 ---
 title: "Belief-Entropy Checkpointing"
 category: "feedback-loops"
-evidenceLevel: "strong"
+evidenceLevel: "moderate"
 summary: "Agents that save memory only at session end capture final state but lose decision rationale at earlier branch points. Successful agent trajectories show decreasing uncertainty about task state over time; failed ones show stagnant or increasing entropy. The pattern: checkpoint at high-uncertainty junctures — branch points, reversals, and unexpected outcomes — not only at session end."
 relatedPatterns: ["structured-handoff-header", "strategic-recall-before-ideation", "memory-read-before-write"]
 tags: ["memory", "checkpointing", "uncertainty", "decision-rationale", "session-state", "branch-points", "reversals"]
@@ -59,7 +59,7 @@ Three trigger conditions identify high-uncertainty junctures:
 
 If either answer is "no" or "unclear", **expand the write** rather than truncating. A memory that answers only one probe is half a memory.
 
-**Summarize, don't paste.** Record the inference and the rationale, not raw tool output, API responses, or log snippets. Verbatim output is noise that obscures the decision-relevant signal and may contain PII.
+**Summarize, don't paste verbatim.** Record the inference and the rationale, not raw tool output, API responses, or log snippets. Exception: short decision-critical artifacts (exact error codes, config keys, invariant names) that are retrieval anchors can be included — the goal is to avoid pasting noise, not to prevent precise identifiers that distinguish similar failures.
 
 **Session-end saves remain valuable** — they capture the final state. But intermediate checkpoints capture the branching logic that final state alone cannot reconstruct. Both are better than either alone.
 
@@ -130,7 +130,7 @@ Both probes fail → expand before writing.
 
 **Belief-entropy research in long-horizon agentic systems**: Successful trajectories show decreasing uncertainty about task state as turns accumulate — questions are resolved and the solution space narrows. Failed trajectories show stagnant or increasing entropy — the same questions are re-opened across turns. Checkpointing at high-uncertainty moments creates a natural feedback mechanism that models a successful trajectory's entropy curve by anchoring resolved state at the point of resolution.
 
-**Autogent operational pattern**: The PLAYBOOK "Memory Quality at Write Time" section documents dual-probe anchor question and high-uncertainty juncture saves derived from repeated observation of agents re-deriving already-resolved questions across sessions. The pattern was added after agents were observed retrying the same failed architectural approaches in consecutive sessions, with no memory of the reversal that had already occurred.
+**Autogent operational pattern**: Derived from repeated observation of agents re-deriving already-resolved questions across sessions in the Autogent system. The pattern was added after agents were observed retrying the same failed architectural approaches in consecutive sessions, with no memory of the reversal that had already occurred. The dual-probe anchor question and high-uncertainty juncture save triggers are documented in the system's operational guidelines.
 
 **Decision-rationale preservation principle**: A memory that only answers "what was done" but not "why this was chosen over alternatives" is half a memory. Full checkpoints require both the progress component and the information-gap component to provide the context needed for future sessions to start from the correct state.
 
@@ -153,6 +153,10 @@ Both probes fail → expand before writing.
 - **Writing probes in parallel with the actual write**: The dual-probe check is a gate, not a decoration. If probe 2 fails (unclear what still needs to happen), expanding the write before the task is done is preferable to reconstructing missing context from a partial save later.
 
 - **Confusing "unexpected outcome" with "any surprising result"**: The trigger is specifically when a result *contradicts your model of the system* — i.e., it changes what you believe about how the system works. A result that surprises you but confirms your model does not meet the threshold.
+
+- **Treating checkpoints as universally valid forever**: A checkpoint encodes the rationale under the assumptions and context that held *at the time it was written*. If the system changes materially (library update, schema migration, architecture pivot), old checkpoints should be re-evaluated rather than applied uncritically. Include enough context in the checkpoint (system version, key assumptions) to assess its continued validity.
+
+- **Mid-session writes in shared memory without read-before-write**: Belief-entropy checkpointing increases write frequency mid-session. In shared memory stores, this amplifies the risk of lost-update races. Always follow the Memory Read Before Write pattern — read the target location before writing, especially when writing mid-session rather than at session end.
 
 ## Related Patterns
 
