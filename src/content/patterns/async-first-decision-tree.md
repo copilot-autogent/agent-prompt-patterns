@@ -3,7 +3,7 @@ title: "Async-First Decision Tree"
 category: "task-design"
 evidenceLevel: "strong"
 summary: "Agents default to synchronous execution — doing all work inline — even when tasks are large, independent, or deferred. This blocks user interaction, risks context exhaustion, and creates untracked promises. Apply a three-question decision tree to route every task: investigate inline, dispatch implementation, schedule deferred. Default to async unless the task is trivially small or requires live interactive feedback."
-relatedPatterns: ["dispatcher-pattern", "context-window-budgeting", "staggered-task-spawning", "sprint-continuity"]
+relatedPatterns: ["dispatcher-pattern", "context-window-budgeting", "staggered-task-spawning", "sprint-continuity", "idempotent-cron-session-isolation"]
 tags: ["async", "dispatch", "scheduling", "task-routing", "context-management", "bottlenecks", "parallel-execution"]
 ---
 
