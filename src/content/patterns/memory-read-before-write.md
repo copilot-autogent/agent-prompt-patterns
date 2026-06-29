@@ -15,15 +15,17 @@ Workspace A's backlog items are gone. Neither agent knows it happened. The stora
 
 This is the persistent storage equivalent of a git force-push without a pull: concurrent writers operating on shared state with no coordination protocol — the agent-memory equivalent of read-modify-write without optimistic locking in distributed systems.
 
-Four failure modes:
+Five failure modes:
 
-**Overwrite collision**: Two concurrent agents or two successive sessions both write to the same topic; the later writer overwrites the earlier writer's changes without merging them.
+**Never-read write** *(→ Three-layer guard, layer 1)*: An agent has never read the location in the current session but assumes it knows the content from general context ("it's probably the same as before"). It writes, overwriting actual current state.
 
-**Stale-read rewrite**: An agent reads a topic at session start, does 20 turns of work, then writes the topic at session end — overwriting changes made by other agents during those 20 turns. By turn 47, the read content has scrolled out of the context window. The agent saves based on a stale mental model.
+**Overwrite collision** *(→ Three-layer guard, layer 2)*: Two concurrent agents both read the same location and then both write; the later writer overwrites the earlier writer's changes without merging them.
 
-**Topic drift**: An ideation agent saves to `project-foo-manifest`; the main agent saves to `project-foo-monitor-manifest`; over time the two topics diverge silently — neither agent sees the other's updates.
+**Stale-read rewrite** *(→ Three-layer guard, layer 3)*: An agent reads a topic at session start, does 20 turns of work, then writes the topic at session end — overwriting changes made by other agents during those 20 turns. By turn 47, the read content has scrolled out of the context window. The agent saves based on a stale mental model.
 
-**Content duplication**: An agent appends a new log entry without checking if a similar entry was already appended, producing repeated entries (especially common in high-frequency cron jobs that write on every tick).
+**Topic drift** *(→ Topic name consistency check)*: An ideation agent saves to `project-foo-manifest`; the main agent saves to `project-foo-monitor-manifest`; over time the two topics diverge silently — neither agent sees the other's updates. The read-before-write guard cannot catch this if the agent reads the *wrong* topic; a naming check is the matching control.
+
+**Content duplication** *(→ Append deduplication check)*: An agent appends a new log entry without checking if a similar entry was already appended, producing repeated entries (especially common in high-frequency cron jobs that write on every tick). Note: a tail-check reduces but does not eliminate duplicates in highly concurrent scenarios — prefer idempotent entry content or content-addressed deduplication for append-heavy locations.
 
 ## Context
 
@@ -66,7 +68,7 @@ patch_memory(topic="project-manifest", old_str=original, new_str=updated)
 |-----------|-------|
 | Full topic replace (`save_memory`) | `recall_memory` immediately before |
 | Surgical edit (`patch_memory`) | `recall_memory` to verify `old_str` still matches |
-| Append log entry (`append_memory`) | Check last entry to avoid duplicate appends |
+| Append log entry (`append_memory`) | Check last entry to avoid duplicate appends; note this is not concurrent-safe — prefer idempotent entry content for high-contention append topics |
 | Create new topic | Search for existing similar topic names before creating |
 
 ### Topic name consistency check
