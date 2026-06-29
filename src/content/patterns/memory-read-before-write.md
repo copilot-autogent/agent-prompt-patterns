@@ -69,7 +69,7 @@ patch_memory(topic="project-manifest", old_str=original, new_str=updated)
 | Full topic replace (`save_memory`) | `recall_memory` immediately before | Read → synthesize full content → write; for cross-context rewrites, preserve unfamiliar items from other agents |
 | Surgical edit (`patch_memory`) | `recall_memory` to verify `old_str` still matches | Patch only the changed field — minimizes overwrite surface |
 | Add items to existing topic | `recall_memory` before, then patch | Surgical append via patch, not full rewrite |
-| Append log entry (`append_memory`) | Check last entry to reduce duplicate appends | Prefer idempotent entry content (content-addressed or timestamped); tail-check alone is not concurrent-safe for high-frequency appenders |
+| Append log entry (`append_memory`) | Check last entry to reduce adjacent-duplicate appends | **Best practice**: use idempotent entry content (timestamped or content-addressed) — tail-check alone misses non-adjacent duplicates from retries or out-of-order appends |
 | Create new topic | Search for existing similar topic names first | Use `list_memory()` and read candidates before creating |
 
 ### Topic name consistency check
@@ -85,12 +85,14 @@ list_memory()
 
 Near-match detection is judgment-based: if two names share the core noun phrase (e.g., `cli-monitor-manifest`) they are likely the same topic. When in doubt, read the candidate topic first to confirm — topic content is more reliable than name similarity alone.
 
+**Limitation**: `list_memory()` → create is not race-safe. Two agents can independently call `list_memory()`, find no match, and each create a near-duplicate topic. This check *reduces* topic drift when agents are operating sequentially, but does not eliminate it under true concurrency. For high-contention manifest topics, prefer a single designated topic name documented in a shared conventions file.
+
 ### Three-layer enforcement (for systems with a code guard)
 
-The three-layer guard provides automated enforcement of the behavioral rule above:
+The three-layer guard provides automated enforcement of the behavioral rule above for **writes to existing topics**. First-write / topic-create operations fall outside the guard by definition and rely on the topic name consistency check above.
 
 1. **Never read**: Storage location exists but has not been read in this session. Block the write.
-2. **Stale file**: Location was read, but the underlying data has been modified by another context since that read. Block the write. This is best-effort — a timestamp check catches sequential overwrites reliably but not true simultaneous concurrent writes at the storage layer.
+2. **Stale file**: Location was read, but the underlying data has been modified by another context since that read. Block the write. This is best-effort — a timestamp check catches sequential overwrites reliably but not simultaneous concurrent writes (CAS/version tokens provide stronger guarantees).
 3. **Stale context**: Location was read more than N turns ago (typically 10). Content may have scrolled out of the context window. Block the write and prompt a re-read.
 
 **Recency check before writing**: If you read a location more than 10 turns ago and are about to write, re-read first. The content in your context may be stale even if you believe it's current.
@@ -104,9 +106,7 @@ The three-layer guard provides automated enforcement of the behavioral rule abov
 
 ## Evidence
 
-**Autogent operational pattern**: PLAYBOOK and CONTEXT.md both carry `recall_memory before save_memory — enforced by code (PR #294) + behavioral habit` as a non-negotiable rule. Root cause of enforcement: repeated lost-update incidents where agents overwrote manifest content that other sessions had added.
-
-**PR #294**: The severity of this failure mode warranted code-level enforcement, not just behavioral guidance — the three-layer write guard was implemented as a hard block after behavioral prompting alone proved insufficient.
+**Autogent operational pattern**: PLAYBOOK and CONTEXT.md in the Autogent system both carry `recall_memory before save_memory — enforced by code (PR #294) + behavioral habit` as a non-negotiable rule. Root cause of enforcement: repeated lost-update incidents where agents overwrote manifest content that other sessions had added. The code guard (PR #294) was added after behavioral prompting alone proved insufficient.
 
 **Topic name drift observed**: After a 2026-06-28 workspace wipe and reconstruction, an ideation agent saved to `project-wrapper-monitor-manifest` while the main agent used `project-cli-wrapper-monitor-manifest` — creating a split-brain state with diverging manifests that required manual reconciliation. Neither agent detected the divergence until a health audit.
 
