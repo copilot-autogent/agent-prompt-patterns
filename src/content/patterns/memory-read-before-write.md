@@ -2,7 +2,7 @@
 title: "Memory Read Before Write"
 category: "feedback-loops"
 evidenceLevel: "strong"
-summary: "Agents that write to shared persistent storage without reading first silently overwrite contributions from other agents or contexts. The pattern: always read a storage location in the current session before saving to it. Systems can enforce this with a three-layer guard: block writes on locations never read, on locations modified since read, and on locations read more than N turns ago."
+summary: "Agents that write to shared persistent storage without reading first silently overwrite contributions from other agents or contexts. The pattern: always read a storage location in the current session before saving to it, and verify the topic name before creating new topics. Systems can enforce this with a three-layer guard (never-read, stale-file, stale-context) plus a topic name consistency check and append deduplication discipline."
 relatedPatterns: ["feedback-loop-via-memory", "observer-actor-separation", "bounded-autonomy", "strategic-recall-before-ideation", "belief-entropy-checkpointing"]
 tags: ["memory", "shared-state", "safety", "multi-agent", "recall", "write-guard", "concurrency", "topic-naming", "lost-update"]
 ---
@@ -19,9 +19,9 @@ Five failure modes:
 
 **Never-read write** *(→ Three-layer guard, layer 1)*: An agent has never read the location in the current session but assumes it knows the content from general context ("it's probably the same as before"). It writes, overwriting actual current state.
 
-**Overwrite collision** *(→ Three-layer guard, layer 2)*: Two concurrent agents both read the same location and then both write; the later writer overwrites the earlier writer's changes without merging them.
+**Overwrite collision** *(→ Three-layer guard, layer 2)*: Agent B reads a location, another agent writes to it, and then agent B writes — overwriting the intervening change. Layer 2 detects that the underlying data was modified since agent B's read (timestamp or version check) and blocks the write. Note: if two agents read and then write truly simultaneously (race at the storage layer), a best-effort timestamp check can still let one through; for high-contention locations, prefer append-only semantics or storage with CAS/version tokens.
 
-**Stale-read rewrite** *(→ Three-layer guard, layer 3)*: An agent reads a topic at session start, does 20 turns of work, then writes the topic at session end — overwriting changes made by other agents during those 20 turns. By turn 47, the read content has scrolled out of the context window. The agent saves based on a stale mental model.
+**Stale-read rewrite** *(→ Three-layer guard, layer 3)*: An agent reads a topic at session start, does 20 turns of work, then writes the topic at session end. By turn 47, the read content has scrolled out of the context window and the agent saves based on a stale mental model — regardless of whether other agents have written in the interim. Layer 3 blocks writes when the last read was more than N turns ago (typically 10) and prompts a re-read to refresh context.
 
 **Topic drift** *(→ Topic name consistency check)*: An ideation agent saves to `project-foo-manifest`; the main agent saves to `project-foo-monitor-manifest`; over time the two topics diverge silently — neither agent sees the other's updates. The read-before-write guard cannot catch this if the agent reads the *wrong* topic; a naming check is the matching control.
 
@@ -43,7 +43,7 @@ It is most critical for:
 
 It is less critical (but still good hygiene) for:
 - **Read-only memory access** — no guard needed when you are not writing
-- **Append-only log topics where overwrites aren't structurally possible** — still check for duplicate entries before appending
+- **Append-only log topics** — overwrites aren't possible, but duplicate-entry deduplication still applies (see Content Duplication above)
 
 ## Solution
 
@@ -64,16 +64,17 @@ patch_memory(topic="project-manifest", old_str=original, new_str=updated)
 
 ### Enforcement hierarchy
 
-| Operation | Guard |
-|-----------|-------|
-| Full topic replace (`save_memory`) | `recall_memory` immediately before |
-| Surgical edit (`patch_memory`) | `recall_memory` to verify `old_str` still matches |
-| Append log entry (`append_memory`) | Check last entry to avoid duplicate appends; note this is not concurrent-safe — prefer idempotent entry content for high-contention append topics |
-| Create new topic | Search for existing similar topic names before creating |
+| Operation | Guard | Preferred approach |
+|-----------|-------|--------------------|
+| Full topic replace (`save_memory`) | `recall_memory` immediately before | Read → synthesize full content → write; for cross-context rewrites, preserve unfamiliar items from other agents |
+| Surgical edit (`patch_memory`) | `recall_memory` to verify `old_str` still matches | Patch only the changed field — minimizes overwrite surface |
+| Add items to existing topic | `recall_memory` before, then patch | Surgical append via patch, not full rewrite |
+| Append log entry (`append_memory`) | Check last entry to reduce duplicate appends | Prefer idempotent entry content (content-addressed or timestamped); tail-check alone is not concurrent-safe for high-frequency appenders |
+| Create new topic | Search for existing similar topic names first | Use `list_memory()` and read candidates before creating |
 
 ### Topic name consistency check
 
-Before creating a new topic, scan existing topic names for near-matches:
+Before creating a new topic, scan existing topic names for near-matches using `list_memory()`. Look for topics that share key words, prefixes, or suffixes with the name you intend to create:
 
 ```
 # Example: want to create "project-cli-monitor-manifest"
@@ -82,28 +83,17 @@ list_memory()
 # → Don't create a second topic; write to the existing one
 ```
 
-This prevents topic drift where two agents silently maintain diverging copies of the same data under slightly different names.
+Near-match detection is judgment-based: if two names share the core noun phrase (e.g., `cli-monitor-manifest`) they are likely the same topic. When in doubt, read the candidate topic first to confirm — topic content is more reliable than name similarity alone.
 
 ### Three-layer enforcement (for systems with a code guard)
 
+The three-layer guard provides automated enforcement of the behavioral rule above:
+
 1. **Never read**: Storage location exists but has not been read in this session. Block the write.
-2. **Stale file**: Location was read, but the underlying data has been modified by another context since that read. Block the write (timestamp check).
+2. **Stale file**: Location was read, but the underlying data has been modified by another context since that read. Block the write. This is best-effort — a timestamp check catches sequential overwrites reliably but not true simultaneous concurrent writes at the storage layer.
 3. **Stale context**: Location was read more than N turns ago (typically 10). Content may have scrolled out of the context window. Block the write and prompt a re-read.
 
-### Update discipline by operation type
-
-| Operation | Approach |
-|-----------|----------|
-| Adding items | Surgical append via patch operation, not full rewrite |
-| Updating a specific field | Patch operation targeting the exact field |
-| Full rewrite (consolidation) | Read → synthesize full content → write |
-| Cross-context rewrite | Read + check for unfamiliar items before overwriting |
-
-**Cross-context rewrite discipline**: When doing a full rewrite (e.g., backlog consolidation), scan the current content for items you didn't add. They may come from other contexts. Preserve or explicitly merge them — don't silently drop them because they're unfamiliar.
-
-**Prefer additive updates over full rewrites.** Patch operations with targeted changes affect only the section you intend to modify. Full rewrites depend on your context window containing the full accurate current state.
-
-**Recency check before writing**: If you read a location many turns ago (> 10 turns) and are about to write, re-read first. The content in your context may be stale even if you believe it's current.
+**Recency check before writing**: If you read a location more than 10 turns ago and are about to write, re-read first. The content in your context may be stale even if you believe it's current.
 
 ## When to Apply
 
