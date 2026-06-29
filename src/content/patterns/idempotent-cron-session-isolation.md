@@ -1,9 +1,9 @@
 ---
 title: "Idempotent Cron Session Isolation"
 category: "multi-agent"
-evidenceLevel: "strong"
+evidenceLevel: "moderate"
 summary: "Scheduled agents configured with persistent:true reuse a single SDK session across ticks. For idempotent meta-crons — agents whose job is stateless per-tick (review open PRs, file ideation issues, run audits) — this session reuse introduces harmful in-context memory: the agent remembers doing work in a prior tick and silently skips it in the current one. The fix is to set persistent:false on any cron whose per-tick work should be a fresh, independent evaluation."
-relatedPatterns: ["circuit-breaker-recurring-tasks", "duplicate-agent-spawn-prevention", "async-first-decision-tree"]
+relatedPatterns: ["circuit-breaker", "duplicate-agent-spawn-prevention", "async-first-decision-tree"]
 tags: ["cron", "scheduling", "persistent-session", "session-isolation", "idempotency", "silent-failure", "meta-cron", "multi-agent"]
 ---
 
@@ -39,6 +39,8 @@ The pattern does **not** apply to:
 
 **Set `persistent: false` on any idempotent meta-cron agent task.**
 
+> **Note**: `persistent: false` eliminates cross-tick context bleed, but it does not make an agent's actions inherently idempotent. A fresh-session agent can still duplicate side effects (posting duplicate comments, filing duplicate issues) if it doesn't check external state before acting. True idempotency requires the agent's prompt to include explicit "check before act" instructions (e.g., "before posting a review, verify no existing review comment covers this point"). Session isolation prevents *memory contamination*; prompt-level guards prevent *duplicate side effects*. If tick overlap is possible (e.g., a slow cron tick that outlasts the schedule interval), locking or deduplication at the scheduling layer is also required.
+
 ```yaml
 # BAD: idempotent cron with persistent session
 task:
@@ -67,13 +69,13 @@ task:
 
 ### Diagnostic signal
 
-If a repeating cron agent completes **faster than 20% of its normal baseline**, suspect a silent skip. Investigate:
+If a repeating cron agent completes **faster than 20% of its normal baseline for comparable workload**, suspect a silent skip. This is a heuristic, not a hard rule: a healthy tick with fewer open items (fewer PRs, no new issues) will legitimately run faster. Calibrate against work volume, not raw time alone. Investigate:
 
-1. **Expected output**: What should this tick have produced? (comments filed, issues created, changes made)
+1. **Expected output**: What should this tick have produced given the current workload? (comments filed, issues created, changes made)
 2. **Actual output**: What did it actually produce?
-3. **Completion time vs. historical baseline**: A 30-second tick where normal is 5 minutes is a near-certain skip.
+3. **Completion time vs. historical baseline for similar workload**: A 30-second tick where the prior tick with identical inputs took 5 minutes is a near-certain skip.
 
-The fast-completion pattern is the primary early-warning signal. Monitor it actively for any cron agent doing review or evaluation work.
+The fast-completion pattern is the primary early-warning signal. Monitor it actively for any cron agent doing review or evaluation work, and supplement with output-count metrics where possible.
 
 ## Evidence
 
