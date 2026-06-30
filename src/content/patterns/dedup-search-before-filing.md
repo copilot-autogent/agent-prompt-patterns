@@ -72,7 +72,7 @@ Run both keyword searches before making a filing decision.
 
 ### Step 3 — Inspect matches and determine closure disposition
 
-When a matching closed issue is found, call `github-issue_read method=get` on that issue number to retrieve the `state_reason` field. GitHub exposes two close-state values relevant here: `completed` (set when the issue was manually closed as done — does NOT prove code was deployed or merged) and `not_planned` (declined or out of scope). For issues closed as duplicates, GitHub records a timeline reference event ("Marked as duplicate of #N") visible in the issue detail; a `duplicate` label may also be present but is not automatically applied by GitHub and should be treated as a secondary signal.
+When a matching closed issue is found, call `github-issue_read method=get` on that issue number to retrieve the `state_reason` field. GitHub exposes two close-state values relevant here: `completed` (set when the issue was manually closed as done — does NOT prove code was deployed or merged) and `not_planned` (declined or out of scope). For issues closed as duplicates, the evidence is in the issue body and labels: look for text like "Duplicate of #N", "Same as #N", or a `duplicate` label. The GitHub timeline API exposes a formal "marked as duplicate" event, but that requires a separate `/timeline` endpoint call beyond the standard `get` response.
 
 | Signal | Decision |
 |--------|----------|
@@ -80,14 +80,14 @@ When a matching closed issue is found, call `github-issue_read method=get` on th
 | Same concept, different title (keyword overlap ≥ 50%) | **Skip** — semantic duplicate |
 | Closed issue, `state_reason: completed` | **Investigate before skipping** — check whether a PR linked to this issue was actually merged to the repository's release branch; manually closed issues may set `completed` without any code being deployed |
 | Closed issue, `state_reason: not_planned` | **Read closure notes** — if the reason still applies, skip; if context has changed, consider refiling with an explicit reference to the prior closure |
-| Closed issue, duplicate timeline event or `duplicate` label | **Follow the duplicate chain** — find the canonical issue and check its status |
+| Closed issue, body/comments reference "Duplicate of #N" or `duplicate` label | **Follow the duplicate chain** — find the canonical issue and check its status |
 | Closed issue, `state_reason` is `null` (legacy) | **Read issue body and labels** for "won't fix", "completed", or "by design" signals |
 | Complementary concept (same category, different problem) | **File** — not a duplicate |
 | No matches in either search | **File** — likely novel |
 
 "Keyword overlap ≥ 50%" means: if you list the 4 core concepts implied by both titles, at least 2 are the same concept (even if different words). Use judgment on meaning, not string matching.
 
-> **Checking `state_reason` in practice**: GitHub's search results include `state` (open/closed) but not `state_reason`. For any matching closed issue, call `github-issue_read method=get` to retrieve `state_reason`. Budget one `get` call per matched closed issue.
+> **Checking `state_reason` in practice**: GitHub's search results include `state` (open/closed) but not `state_reason`. For any matching closed issue, call `github-issue_read method=get` to retrieve `state_reason` and read the issue body and labels. Budget one `get` call per matched closed issue. A formal duplicate timeline event requires a separate `/timeline` API call; rely on body text and labels as the accessible signal.
 
 ### Step 4 — Include dedup evidence in the filed issue
 
@@ -122,13 +122,13 @@ If issues were found but judged non-overlapping, list them:
    duplicate past the first page of results.
 3. If total_count >= 1: inspect titles for semantic overlap.
 4. If meaningful overlap: call github-issue_read method=get on the matching issue to
-   check state_reason (completed / not_planned) and the issue timeline for duplicate
-   references.
+   check state_reason (completed / not_planned), read the issue body and labels for
+   duplicate references ("Duplicate of #N", duplicate label).
    - state_reason: completed → also check whether a linked PR was actually merged
      to the repository's release branch before treating as "already shipped"
    - state_reason: not_planned → read closure notes before deciding
-   - duplicate timeline reference or duplicate label → follow the chain to the
-     canonical issue
+   - body/comments reference "Duplicate of #N" or duplicate label → follow the
+     chain to the canonical issue
 5. If no overlap, or all matches are judged non-overlapping: proceed to file.
 6. In the filed issue, include:
    - The keywords you searched
@@ -162,7 +162,7 @@ If issues were found but judged non-overlapping, list them:
 
 - **`completed` ≠ shipped**: An issue closed with `state_reason: completed` was manually marked done. That does not guarantee the associated PR was merged, passed tests, or reached the release branch. Verify the linked PR's merge status before treating `completed` as proof the feature was deployed.
 
-- **Duplicate detection requires checking the timeline, not just labels**: GitHub does not automatically apply a `duplicate` label when an issue is marked as a duplicate. The primary evidence is a timeline reference event ("Marked as duplicate of #N"). The `duplicate` label is a secondary heuristic that may or may not be present. Relying on the label alone will miss many duplicate chains.
+- **Duplicate detection relies on body text and labels, not timeline events**: GitHub's duplicate timeline event ("Marked as duplicate of #N") requires a separate `/timeline` API call; it is not returned by the standard issue `get` response. The accessible signals are the issue body and labels. A body reference like "Duplicate of #N" or "Same as #N", or a `duplicate` label, is sufficient evidence to follow the chain. GitHub does not automatically apply the `duplicate` label; it may be absent even when an issue is genuinely a duplicate.
 
 - **Keyword specificity trap**: Keywords that are too generic ("pattern", "agent", "task") return hundreds of results and make the dedup check useless. Keywords that are too specific ("dedup-search-before-filing") may miss semantic duplicates. Use 2–3 mid-specificity domain terms — specific enough to narrow results, broad enough to catch title variations.
 
