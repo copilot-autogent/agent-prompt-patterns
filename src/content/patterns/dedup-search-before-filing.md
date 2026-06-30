@@ -19,7 +19,7 @@ Four failure variants:
 
 **Cross-cron collision**: Two independent crons (an ideation cron and a monitoring cron) both identify the same gap on the same day. Each files independently. Neither searches for the other's issue. Two sprints run in parallel; the second one merges dead code on top of the first.
 
-**Closed issue resurrection**: The agent filters its search to `is:open`. The issue it's about to file was closed six weeks ago as "completed." The `is:open` filter hides it entirely. The agent concludes "never filed" and creates a duplicate.
+**Closed issue resurrection**: The agent filters its search to `is:open`. The issue it's about to file was closed six weeks ago. The `is:open` filter hides it entirely. The agent concludes "never filed" and creates a duplicate.
 
 Each variant wastes a full sprint cycle. The cost is not just compute — it is the follow-up cleanup: closing duplicate issues, reverting dead code, reconciling conflicting implementations, and explaining to downstream dependents why two versions of the same thing exist.
 
@@ -68,18 +68,24 @@ search: is:issue "dispatch context block"
 
 Run both searches before making a filing decision.
 
-### Step 3 — Apply overlap judgment
+### Step 3 — Inspect matches and determine closure disposition
+
+When a matching closed issue is found, read it to determine whether refiling is appropriate. GitHub issues expose a `state_reason` field in the API with three values: `completed` (work was done), `not_planned` (declined or won't fix), and `duplicate` (superseded by another issue). Labels and the issue body carry additional context.
 
 | Signal | Decision |
 |--------|----------|
 | Same concept, same title | **Skip** — exact duplicate |
 | Same concept, different title (keyword overlap ≥ 50%) | **Skip** — semantic duplicate |
-| Closed issue, same concept, resolution was "completed" | **Skip** — already shipped |
-| Closed issue, same concept, resolution was "won't fix" | **Check resolution reason** before refiling |
+| Closed issue, `state_reason: completed` | **Skip** — already shipped; check whether a PR was merged and exists in `main` |
+| Closed issue, `state_reason: not_planned` | **Read closure notes** — if reason still applies, skip; if context changed, consider refiling with explicit reference to the prior closure |
+| Closed issue, `state_reason: duplicate` | **Follow the duplicate chain** — find the canonical issue and check its status |
+| Closed issue, `state_reason` absent (legacy) | **Read issue body and labels** for "won't fix", "completed", or "by design" signals |
 | Complementary concept (same category, different problem) | **File** — not a duplicate |
 | No matches in either search | **File** — likely novel |
 
 "Keyword overlap ≥ 50%" means: if you list the 4 core concepts implied by both titles, at least 2 are the same concept (even if different words). Use judgment on meaning, not string matching.
+
+> **Checking `state_reason` in practice**: When searching via the GitHub search API, results include `state` (open/closed) but not `state_reason`. For any matching closed issue, call `github-issue_read method=get` on that specific issue number to retrieve `state_reason` before making the skip/file decision. The search result alone is not sufficient — one extra API call is required per matched closed issue.
 
 ### Step 4 — Include dedup evidence in the filed issue
 
@@ -110,8 +116,9 @@ If issues were found but judged non-overlapping, list them:
    - Search 2: github-search_issues query="[keyword set 2]" owner=OWNER repo=REPO
    (Do NOT add is:open — search open and closed issues.)
 3. If total_count >= 1: inspect titles for semantic overlap.
-4. If meaningful overlap: SKIP filing. Note the duplicate in your run log.
-5. If no overlap: proceed to file.
+4. If meaningful overlap: call github-issue_read method=get on the matching issue to
+   check state_reason (completed / not_planned / duplicate). Apply the judgment table above.
+5. If no overlap, or all matches are judged non-overlapping: proceed to file.
 6. In the filed issue, include:
    - The keywords you searched
    - Any issues found and why they were judged non-overlapping (or "none found")
@@ -130,9 +137,9 @@ If issues were found but judged non-overlapping, list them:
 
 ## Tradeoffs
 
-**Benefit**: Eliminates duplicate sprint cycles entirely. The search cost is 1–2 API calls (under 5 seconds). The cost of a missed duplicate is a full sprint cycle (15–60 minutes) plus PR cleanup, dead code removal, and issue management overhead.
+**Benefit**: Eliminates duplicate sprint cycles entirely. The search cost is 1–2 API calls (under 5 seconds), plus one extra `get` call per matching closed issue. The cost of a missed duplicate is a full sprint cycle (15–60 minutes) plus PR cleanup, dead code removal, and issue management overhead.
 
-**Cost**: Adds a mandatory pre-filing step that slows down the filing decision slightly. In high-throughput ideation agents, this adds 2–3 seconds per proposal. Acceptable in all measured cases.
+**Cost**: Adds a mandatory pre-filing step that slows down the filing decision slightly. In high-throughput ideation agents, this adds 2–5 seconds per proposal. Acceptable in all measured cases.
 
 **Watch out for**:
 
@@ -144,7 +151,9 @@ If issues were found but judged non-overlapping, list them:
 
 - **Trusting 0 results too quickly**: A search returning 0 results is evidence the exact query wasn't matched — it is not proof the concept doesn't exist. Run a second search with a different phrasing before concluding "no duplicate found."
 
-- **Ignoring closed issues' resolution reason**: Not all closed issues are "completed." A "won't fix" or "by design" closure may warrant reopening or filing a successor. When a closed issue is found that matches the proposed filing, read its closure notes before deciding to skip.
+- **`state_reason` requires a second API call**: GitHub's search results include `state` (open/closed) but not `state_reason`. Skipping the per-issue `get` call means applying the judgment table without the key field it depends on. Budget one `get` call per matched closed issue.
+
+- **`state_reason` absent on legacy issues**: Issues closed before GitHub introduced `state_reason` (or via integrations that don't set it) may return `null`. In that case, fall back to reading labels (`wontfix`, `resolved`, `by-design`) and the closing comment to infer disposition.
 
 ## Related Patterns
 
