@@ -3,7 +3,7 @@ title: "Enumeration-First Verification"
 category: "task-design"
 evidenceLevel: "moderate"
 summary: "When an agent claims 'all N items satisfy property P', it typically supports this with a manual trace. Traces reliably miss defects because confidence compounds without actually testing the universal quantifier. For any batch claim, write an enumeration validator that checks every item programmatically — enumerate both input-legality invariants and output-correctness invariants."
-relatedPatterns: ["empirical-validation-loop", "side-effect-verification", "pre-commit-planning-phase", "parallel-tool-call-batching"]
+relatedPatterns: ["empirical-validation-loop", "side-effect-verification", "pre-commit-planning-phase", "parallel-tool-call-batching", "evidence-freshness-decay"]
 tags: ["verification", "batch-validation", "invariants", "quality", "datasets", "enumeration", "testing", "silent-failure"]
 ---
 

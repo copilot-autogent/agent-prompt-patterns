@@ -42,7 +42,7 @@ When reading evidence, mentally (or explicitly) note when you read it and how lo
 
 | Evidence type | Suggested TTL | Rationale |
 |---|---|---|
-| File contents (own repo, same session) | 30 min (read-only use) | Files change slowly within a session; re-read immediately before any write (see *Memory Read Before Write*) |
+| File contents (own repo, same session) | 30 min (read-only); 0 for writes | In a single-agent session files change slowly; in a multi-agent workspace, another agent can modify a file at any time — re-read immediately before any write (see *Memory Read Before Write*) |
 | GitHub issue / PR state | 10 min | PRs merge and issues close quickly |
 | CI / deploy status | 5 min | Builds finish while you work |
 | Memory topics | 1 session or 4 h, whichever is shorter | Re-read at session start; long-running sessions accumulate hours of drift |
@@ -80,7 +80,7 @@ When rate limits, missing tokens, or other constraints prevent re-reading:
 
 Watch for these indicators that evidence may be stale:
 
-- **Memory topic `last-updated` timestamp** — compare to current time before trusting content
+- **Memory topic `last-updated` timestamp** — compare to current time before trusting content; if the timestamp is missing or malformed, treat the topic as stale and re-read
 - **GitHub `updated_at` on issues/PRs** — if newer than your read timestamp, something changed after you looked
 - **The phrase "as of" in saved topics** — a staleness flag, not a freshness guarantee
 - **Snapshot file generation dates** — `docs/*.generated.json` files are point-in-time exports; check when they were last regenerated
@@ -92,12 +92,15 @@ Watch for these indicators that evidence may be stale:
 manifest = recall_memory("cross-repo-backlog")  # 6 days old
 re_seed_tasks(manifest)  # re-introduces already-closed problems
 
-# GOOD: verify before acting on old snapshots
+# GOOD: verify before acting on old snapshots; re-read each entity type separately
 manifest = recall_memory("cross-repo-backlog")  # 6 days old
 if manifest.age > 1_day:
-    current_issues = github_list_issues(state="open")  # fresh read
-    diff_and_reconcile(manifest, current_issues)
-    re_seed_tasks(current_issues)
+    # Re-read every tracked entity class — not just open issues
+    current_issues = github_list_issues(state="open")
+    current_prs = github_list_prs(state="open")
+    current_labels = github_list_labels()
+    diff_and_reconcile(manifest, current_issues, current_prs, current_labels)
+    re_seed_tasks(reconciled_state)
 ```
 
 ### Anti-pattern: trusting sprint summary prose
@@ -111,10 +114,11 @@ mark_issue_done(65)  # acts on claimed state, not verified state
 # GOOD: verify artifact state via structured API
 pr_state = github_get_pr(105)  # fresh API call
 issue_state = github_get_issue(65)
-if pr_state.merged and issue_state.closed:
+# Check both state AND that the PR's body references the issue (causal link)
+if pr_state.merged and issue_state.closed and issue_closed_by_pr(issue_state, 105):
     mark_issue_done(65)
 else:
-    # Summary over-claimed: surface the mismatch and re-schedule
+    # Surface the mismatch explicitly rather than silently skipping
     log_mismatch("sprint-42 claimed merged/closed but actual state: "
                  f"PR merged={pr_state.merged}, issue closed={issue_state.closed}")
     re_schedule_work(65)
