@@ -1,6 +1,6 @@
 ---
 title: "Convergence Stall Detection"
-category: "error-recovery"
+category: "agent-autonomy"
 evidenceLevel: "emerging"
 summary: "Agents can loop without making measurable forward progress — re-reading the same files, re-running the same failing test, or repeatedly attempting the same fix strategy. Maintain a lightweight progress ledger and abort or pivot when N consecutive steps leave state unchanged."
 relatedPatterns: ["circuit-breaker", "empirical-validation-loop", "constraint-falsification"]
@@ -58,25 +58,29 @@ Track state on the signal after each action:
 progress_ledger = []
 stall_count = 0
 STALL_THRESHOLD = 3
+MAX_LEDGER = 10
 
 for step in task_steps:
-    state_before = snapshot_progress_signal()
+    state_before = canonicalize(snapshot_progress_signal())
     execute(step)
-    state_after = snapshot_progress_signal()
+    state_after = canonicalize(snapshot_progress_signal())
 
-    progress_ledger.append(state_after)  # record every step for escalation summary
-
-    if state_after == state_before:
+    # Oscillation-aware stall check: count if unchanged OR if state has cycled back
+    if state_after == state_before or state_after in progress_ledger:
         stall_count += 1
     else:
         stall_count = 0
+
+    progress_ledger.append(state_after)  # record every step for escalation summary
+    if len(progress_ledger) > MAX_LEDGER:
+        progress_ledger = progress_ledger[-MAX_LEDGER:]
 
     if stall_count >= STALL_THRESHOLD:
         log_stall_and_escape()
         break
 ```
 
-The ledger records every step (not just progressing ones) so the escalation summary can report "Last observed values" accurately. Store only the canonicalized signal values (e.g., pass count, file hash, unique result IDs) — not full output. Prune to the last 10 entries to keep context bounded.
+`canonicalize()` strips nondeterministic noise from the signal (timestamps, memory addresses, result ordering) so that two semantically-identical states compare equal. The ledger records every step so the escalation summary can report "Last observed values" accurately. Capped at 10 entries to keep context bounded.
 
 ### Step 3: Stall-escape protocol
 
@@ -96,17 +100,12 @@ When the stall threshold is reached:
 
 ### Step 4: Reset on genuine progress
 
-The stall counter resets to zero whenever the progress signal advances toward the goal. "Advances toward the goal" means the new state is closer to task completion — not just different from the previous step.
+The stall counter resets to zero when the new state is both different from the previous state *and* has not appeared before in the ledger. This catches two distinct failure modes:
 
-**Oscillation trap**: If the progress signal is defined as "different from the previous step," an agent can oscillate between two equivalent-failure states (A → B → A → B) without ever advancing, and the stall counter resets at every transition. To prevent this, track whether the *new state has been seen before* in the ledger, not only whether it differs from the immediately preceding state. If the new state matches any prior ledger entry, treat the step as a stall rather than progress.
+- **Direct stall**: `state_after == state_before` — same output, no change at all.
+- **Oscillation**: `state_after in progress_ledger` — the agent cycles through a finite set of states (A → B → A → B) without ever advancing. Each transition looks like "progress" if checked only against the previous step, but the full ledger reveals the cycle.
 
-```
-# Oscillation-aware version:
-if state_after == state_before or state_after in progress_ledger[-STALL_THRESHOLD:]:
-    stall_count += 1
-else:
-    stall_count = 0
-```
+The pseudocode in Step 2 integrates both checks into a single conditional.
 
 ## Calibrating the threshold
 
@@ -123,10 +122,11 @@ The threshold should be set before the task starts, not adjusted mid-run. Adjust
 If no pivot is available after N unchanged steps, produce a summary in this form:
 
 ```
-STALL DETECTED after 3 consecutive unchanged steps.
+STALL DETECTED — [unchanged | oscillation] after N consecutive steps.
 
 Progress signal: [what was being tracked]
-Last observed values: [signal value at step 1], [step 2], [step 3]
+Last observed values: [ledger entries for last N steps]
+Stall type: [consecutive unchanged | cycling between states A/B/C]
 Attempted strategies: [list of distinct approaches tried]
 Hypothesis: [most likely root cause, even if unverified]
 Suggested next step: [what a human should try, or what information would unblock]

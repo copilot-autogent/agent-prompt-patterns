@@ -3,7 +3,7 @@ title: "Circuit Breaker for Recurring Agent Tasks"
 category: "agent-autonomy"
 evidenceLevel: "moderate"
 summary: "Add a self-rating step and auto-disable logic to any recurring agent task. Without a quality signal and circuit breaker, busywork loops run indefinitely — tasks show as completed but produce no novel value, with no signal to the operator."
-relatedPatterns: ["proactivity-injection", "bounded-autonomy", "feedback-loop-via-memory", "idempotent-cron-session-isolation", "dedup-search-before-filing"]
+relatedPatterns: ["proactivity-injection", "bounded-autonomy", "feedback-loop-via-memory", "idempotent-cron-session-isolation", "dedup-search-before-filing", "convergence-stall-detection"]
 tags: ["autonomy", "recurring-tasks", "quality", "self-rating", "circuit-breaker", "busywork", "auto-disable"]
 ---
 
