@@ -18,7 +18,7 @@ read file A  →  read file B  →  read file C
 
 This creates four compounding failure modes:
 
-**Linearly compounding latency**: 5 independent reads that take 300ms each take ~350ms batched vs. ~1,750ms sequential — a 5× wall-clock difference. This scales with the number of calls.
+**Linearly compounding latency**: 5 independent reads that take 300ms each take ~350ms batched vs. ~1,500ms sequential — a 4–5× wall-clock difference. This scales with the number of calls.
 
 **Wasted turn budget**: Many agent environments limit total turns or have per-response costs. Sequential independent calls burn multiple turns where one would suffice.
 
@@ -70,7 +70,9 @@ Are all inputs to call N+1 known before call N completes?
   NO  → sequence (N must complete first)
 ```
 
-The decision is about *knowability upfront*, not just *logical order*. If you could have issued all calls in the same response, you should have — even if one call's result happened to confirm the others were appropriate.
+This is a necessary condition, not sufficient on its own. Even when all inputs are known upfront, also check: does the executor support concurrent invocation? Are there shared rate limits or auth budgets that would serialize the calls anyway? Is the per-call result volume large enough that returning everything in one turn would compress poorly against context limits? When any of these constraints apply, consider batching within a narrower scope (e.g., one module at a time) rather than across the full set at once.
+
+The core principle is still *knowability upfront* — if you could not have issued the calls in parallel even in principle, sequencing is unavoidable.
 
 ### Common parallelizable patterns
 
@@ -78,10 +80,12 @@ The decision is about *knowability upfront*, not just *logical order*. If you co
 |----------|------------------|
 | Read multiple known files | Batch all read/view calls in one response |
 | Search multiple independent patterns | Batch all grep/glob calls in one response |
-| Check multiple API endpoints | Batch all fetch calls in one response |
+| Check multiple same-origin API endpoints | Batch all fetch calls in one response (see note on rate limits below) |
 | Explore multiple codebase areas | Batch all investigate calls in one response |
 | Run dedup searches for multiple candidates | Batch all search calls in one response |
 | Validate multiple independent conditions | Batch all check calls in one response |
+
+**Note on remote/API tool calls**: Independent API endpoints can still share rate limits, auth token budgets, or server-side ordering constraints. Verify that concurrent calls to the same service are safe before batching them. Filesystem and local tool calls (read, grep, glob) do not have this constraint.
 
 ### Anti-pattern: spurious sequential dependency
 
@@ -102,9 +106,11 @@ The BAD version isn't just slow — it creates the illusion that each subsequent
 
 ## Evidence
 
-**Empirical wall-clock measurement**: In a production agentic workflow, independent file reads measured ~300–500ms each. Tasks requiring 5 independent reads took ~350ms batched vs. ~1,750ms sequential — consistent with a 5× wall-clock improvement for fully independent calls. The improvement scales linearly with the number of independent calls.
+**Runtime assumption**: The evidence below assumes the agent executor dispatches tool calls issued in a single response concurrently, rather than serializing them internally. Many modern agent runtimes (including tool-augmented language model APIs) do dispatch concurrent tool calls in parallel. If an executor serializes all tool calls, the latency benefit disappears, though the turn-budget benefit (fewer round trips) still holds. Verify your runtime's behavior before relying on wall-clock estimates.
 
-**Turn budget efficiency**: Agent environments with turn limits (e.g., 40-turn sprints) complete meaningfully more work per turn when parallel batching is applied consistently. A single-turn batch of 5 reads consumes 1 turn vs. 5 turns sequential — a 5-turn savings that compounds across an investigation phase.
+**Empirical wall-clock measurement**: In a production agentic workflow (executor confirmed to dispatch concurrent calls), independent file reads measured ~300–500ms each. Tasks requiring 5 independent reads took ~350ms batched vs. ~1,500ms sequential — consistent with a 4–5× wall-clock improvement. The improvement scales approximately linearly with the number of independent calls up to the executor's concurrency limit.
+
+**Turn budget efficiency**: Agent environments with turn limits (e.g., 40-turn sprints) complete meaningfully more work per turn when parallel batching is applied consistently. A single-turn batch of 5 reads consumes 1 turn vs. 5 turns sequential — a 5-turn savings that compounds across an investigation phase. This benefit holds regardless of whether the executor parallelizes the calls.
 
 **Amdahl's Law applies**: Total speedup is bounded by the sequential portion. Parallelizing independent calls directly reduces the sequential fraction, improving throughput at the task level. For an investigation phase composed of N independent reads (a common case), the sequential fraction approaches 0% when all reads are batched — the entire phase becomes a single turn.
 
@@ -112,15 +118,16 @@ The BAD version isn't just slow — it creates the illusion that each subsequent
 
 ## Tradeoffs
 
-**Benefit**: Linear latency reduction in investigation phases. Turn budget preserved for implementation and verification rather than consumed by sequential reads.
+**Benefit**: Linear latency reduction in investigation phases (on executors that parallelize). Turn budget preserved for implementation and verification rather than consumed by sequential reads.
 
 **Cost**: Requires upfront reasoning about which calls are truly independent before issuing any of them. Agents optimizing locally ("read this, then decide next") must shift to task-level planning ("enumerate all reads the task requires, then issue them together").
 
 **Watch out for**:
-- **Premature batching of dependent calls**: The most common mistake in applying this pattern is batching calls that have a genuine data dependency. A write-then-verify sequence is NOT parallelizable. Verify the independence criterion before batching.
+- **Premature batching of dependent calls**: The most common mistake is batching calls that have a genuine data dependency. A write-then-verify sequence is NOT parallelizable. Verify the independence criterion before batching.
 - **Partial batching**: Batching 3 of 5 independent calls while issuing the remaining 2 sequentially is better than none, but misses savings. Once in batch-mode thinking, enumerate all independent calls in the current scope before issuing the response.
-- **Batch size and context window**: Issuing 20 parallel reads in one response returns 20 results in the next turn. For very large batches, this can create a dense result turn that compresses poorly against context limits. For practical purposes, batch within a scope (e.g., "all files relevant to this module") rather than across the entire task.
+- **Batch size and context window**: Issuing 20 parallel reads in one response returns 20 results in the next turn. For very large batches, this can create a dense result turn that compresses poorly against context limits. For practical purposes, batch within a scope (e.g., "all files relevant to this module") rather than across the entire task at once.
 - **Side-effecting tool calls**: Non-idempotent calls that modify state (write, create, delete) should only be batched if their independent execution order is genuinely safe. Two writes to the same file are not safe to batch. Two writes to different files typically are.
+- **Executor serialization**: If your runtime serializes tool calls internally, wall-clock gains are eliminated. The turn-budget saving still applies, but claims about latency reduction require verifying the executor's concurrency behavior.
 
 ## Related Patterns
 
