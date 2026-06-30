@@ -3,7 +3,7 @@ title: "Constraint Falsification Before Planning"
 category: "agent-autonomy"
 evidenceLevel: "strong"
 summary: "Before any 'I can't do X' conclusion becomes load-bearing in a plan, attempt the positive end-to-end. Testing a proxy for absence (e.g., 'which g++' returns nothing) is not the same as testing the capability itself (e.g., running the binary). A false 'blocked' premise silently propagates through every dependent plan item — and the cost scales with how much is built on it."
-relatedPatterns: ["empirical-validation-loop", "decision-ownership", "pre-commit-planning-phase", "bounded-autonomy", "dedup-search-before-filing"]
+relatedPatterns: ["empirical-validation-loop", "decision-ownership", "pre-commit-planning-phase", "bounded-autonomy", "dedup-search-before-filing", "convergence-stall-detection"]
 tags: ["autonomy", "planning", "falsification", "blocked", "capability-check", "verification", "premises", "environment", "toolchain"]
 ---
 
