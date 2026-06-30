@@ -3,7 +3,7 @@ title: "Constraint Falsification Before Planning"
 category: "agent-autonomy"
 evidenceLevel: "strong"
 summary: "Before any 'I can't do X' conclusion becomes load-bearing in a plan, attempt the positive end-to-end. Testing a proxy for absence (e.g., 'which g++' returns nothing) is not the same as testing the capability itself (e.g., running the binary). A false 'blocked' premise silently propagates through every dependent plan item — and the cost scales with how much is built on it."
-relatedPatterns: ["empirical-validation-loop", "decision-ownership", "pre-commit-planning-phase", "bounded-autonomy"]
+relatedPatterns: ["empirical-validation-loop", "decision-ownership", "pre-commit-planning-phase", "bounded-autonomy", "dedup-search-before-filing"]
 tags: ["autonomy", "planning", "falsification", "blocked", "capability-check", "verification", "premises", "environment", "toolchain"]
 ---
 
@@ -153,3 +153,4 @@ In each of these cases, the proxy absence proves nothing about the actual capabi
 - **[Pre-Commit Planning Phase](/agent-prompt-patterns/patterns/pre-commit-planning-phase)** — separates planning from execution; Constraint Falsification belongs in the planning phase — verify all load-bearing capability premises before committing to a plan structure.
 - **[Decision Ownership](/agent-prompt-patterns/patterns/decision-ownership)** — defines how agents own and act on decisions; a decision built on a false premise transfers the wrong ownership. Constraint Falsification ensures the premise is sound before ownership is assigned.
 - **[Bounded Autonomy](/agent-prompt-patterns/patterns/bounded-autonomy)** — defines what agents can decide without human input; capability checks are exactly the kind of claim that should be self-verified, not escalated. Constraint Falsification defines how to self-verify before concluding a capability boundary exists.
+- **[Dedup-Search Before Autonomous Issue Filing](/agent-prompt-patterns/patterns/dedup-search-before-filing)** — applies the same falsification discipline to the assumption "this issue hasn't been filed yet" before an agent files a new backlog item.

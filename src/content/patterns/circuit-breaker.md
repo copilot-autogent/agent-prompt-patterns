@@ -3,7 +3,7 @@ title: "Circuit Breaker for Recurring Agent Tasks"
 category: "agent-autonomy"
 evidenceLevel: "moderate"
 summary: "Add a self-rating step and auto-disable logic to any recurring agent task. Without a quality signal and circuit breaker, busywork loops run indefinitely — tasks show as completed but produce no novel value, with no signal to the operator."
-relatedPatterns: ["proactivity-injection", "bounded-autonomy", "feedback-loop-via-memory", "idempotent-cron-session-isolation"]
+relatedPatterns: ["proactivity-injection", "bounded-autonomy", "feedback-loop-via-memory", "idempotent-cron-session-isolation", "dedup-search-before-filing"]
 tags: ["autonomy", "recurring-tasks", "quality", "self-rating", "circuit-breaker", "busywork", "auto-disable"]
 ---
 
@@ -80,7 +80,7 @@ Check your quality history (stored in memory topic `<task-name>-quality-log`):
 The 3-point scale is intentionally coarse. Fine-grained scales introduce calibration drift — agents spend effort on the rating rather than on the work. The three categories correspond to distinct behavioral signals:
 
 | Rating | Behavioral signal | Example |
-|--------|------------------|---------|
+|--------|------------------|--------|
 | 3 | Agent-originated proposal, unexpected cross-domain find | "Found a pattern from blog research that applies to the SRS scheduler" |
 | 2 | Backlog execution with genuine user value | "Completed the tag page feature as specified" |
 | 1 | Agent running to avoid empty output | "Reformatted README headers for consistency" |
@@ -122,3 +122,4 @@ The busywork failure was not visible in task completion logs. All 6 variants sho
 - **[Proactivity Injection](/agent-prompt-patterns/patterns/proactivity-injection)** — the circuit breaker is the quality guardrail for proactivity prompts; when proactivity injection stops generating rating-3 output, the circuit breaker ensures the task self-limits rather than running indefinitely
 - **[Bounded Autonomy](/agent-prompt-patterns/patterns/bounded-autonomy)** — the circuit breaker auto-disable is itself a bounded-autonomy action: the agent acts unilaterally on "disable this task" because that decision is explicitly pre-authorized by including the pattern
 - **[Feedback Loop via Memory](/agent-prompt-patterns/patterns/feedback-loop-via-memory)** — the quality log stored in memory is the cross-run feedback mechanism that makes the circuit breaker stateful across sessions
+- **[Dedup-Search Before Autonomous Issue Filing](/agent-prompt-patterns/patterns/dedup-search-before-filing)** — prevents a failure mode the circuit breaker can't detect: filing duplicate issues that each look like novel value on the surface
