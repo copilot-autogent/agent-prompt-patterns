@@ -47,14 +47,16 @@ Determine whether the action is reversible or irreversible:
 | Action | Reversibility | Gate? |
 |---|---|---|
 | Edit a file (local) | Easy undo | No |
-| Open a draft PR | Close and delete branch | No |
-| Post a comment | Edit or delete | No |
+| Open a draft PR | Close and delete branch — but triggers CI, previews, and notifications that cannot be recalled | No¹ |
+| Post a comment | Edit or delete — but recipients receive the notification immediately | No¹ |
 | Close an issue as won't-fix | Reopen trivially | No |
 | Merge a PR | Revert commit (risky at scale) | **YES** |
 | Deploy to production | Rollback possible but operationally costly | **YES** |
 | Delete a branch | May be irrecoverable | **YES** |
 | Send an external webhook or email | Not reversible | **YES** |
 | Push to a protected branch | Revert requires coordination | **YES** |
+
+¹ The *surface action* is reversible, but secondary effects (CI runs, email notifications, preview deploys, code exposure) may not be. If the secondary effects are the primary concern (e.g., triggering a CI run that consumes quota, or exposing a branch to external reviewers), apply the gate anyway. Use judgment based on what specifically cannot be recalled.
 
 If the action is reversible: skip the gate and proceed.
 
@@ -71,19 +73,21 @@ Identify the 2–3 facts the action depends on. For each, determine the highest-
 2. PR is complete — all required files are present → **Verify**: call `get_diff` and scan against the issue spec
 3. Target branch is correct → **Verify**: read `base.ref` from the PR object
 
+After verifying, **record the head SHA** from Step 1 and pass it as `expectedHeadSha` to the merge call. If the branch was pushed between your verification and the merge, the platform will reject the merge rather than silently merging an unverified revision (TOCTOU protection).
+
 *Deleting a branch:*
 1. The branch has no open PRs depending on it → **Verify**: list open PRs filtered to head branch
 2. All work from this branch has been merged → **Verify**: compare branch tip to main; check for unmerged commits
 3. No other agent or workflow references this branch name → **Verify**: search recent CI logs or workflow runs
 
 *Deploying to production:*
-1. Tests pass in the target environment → **Verify**: read latest CI run on the deploy branch
+1. Tests pass for the exact artifact being deployed → **Verify**: read CI check-runs for the specific commit SHA being deployed — do not query "latest CI run on the branch" (the branch may have advanced since the artifact was built; bind verification to the same SHA passed to the deploy tool)
 2. No active incident in progress → **Verify**: query status page or incident tracker
 3. Rollback plan exists and is executable → **Verify**: confirm rollback ref or artifact version is available
 
 *Sending an external webhook or email:*
 1. Target address / endpoint is correct → **Verify**: re-read from config source, not from memory
-2. Payload content is correct → **Verify**: print/log payload for inspection before send
+2. Payload content is correct → **Verify**: inspect payload structure (field names and types) without logging raw values that may contain secrets or PII; if the system supports a dry-run or preview mode, use it; otherwise confirm the schema matches expectations against the API spec before sending
 3. This action has not already been sent (idempotency) → **Verify**: query delivery log or check idempotency key
 
 ### Step 3: State confidence and decide
