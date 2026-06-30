@@ -69,7 +69,7 @@ Identify the 2–3 facts the action depends on. For each, determine the highest-
 **Examples by action type:**
 
 *Merging a PR:*
-1. CI checks are green → **Verify**: query `mergeable_state` (must equal `"clean"`, not inferred from `get_status`)
+1. CI checks are green → **Verify**: query `mergeable_state` from the PR object (must equal `"clean"`). `mergeable_state === "clean"` is the best available composite signal on GitHub — it synthesizes branch protection rules, required checks, and merge conflicts into a single field. For additional precision on critical merges, also query check-runs for the exact head SHA and confirm all required checks show `conclusion === "success"`. Do not use `get_status` alone, which returns `"pending, 0 checks"` when CI has not yet started.
 2. PR is complete — all required files are present → **Verify**: call `get_diff` and scan against the issue spec
 3. Target branch is correct → **Verify**: read `base.ref` from the PR object
 
@@ -88,15 +88,15 @@ After verifying, **record the head SHA** from Step 1 and pass it as `expectedHea
 *Sending an external webhook or email:*
 1. Target address / endpoint is correct → **Verify**: re-read from config source, not from memory
 2. Payload content is correct → **Verify**: inspect payload structure (field names and types) without logging raw values that may contain secrets or PII; if the system supports a dry-run or preview mode, use it; otherwise confirm the schema matches expectations against the API spec before sending
-3. This action has not already been sent (idempotency) → **Verify**: query delivery log or check idempotency key
+3. This action has not already been sent (idempotency) → **Verify**: query delivery log or check idempotency key. Under concurrency, a pre-flight idempotency check is not sufficient on its own — another agent can send between your check and your send. Use an atomic idempotency key passed *with* the send operation (e.g., `Idempotency-Key` header) to make duplicate-send detection reliable; treat the pre-flight check as a best-effort early exit, not a safety guarantee.
 
 ### Step 3: State confidence and decide
 
 After verification, assign one of three confidence levels:
 
 - **HIGH (verified)**: The highest-stakes assumption was confirmed by a fresh API call with an unambiguous result. Proceed with the action.
-- **MODERATE (inferred)**: The assumption could not be directly verified, but strong proxies exist (e.g., tests passed locally, CI was green 5 minutes ago, no conflicting agent is known to be running). Proceed with the action, but note what was not directly confirmed.
-- **LOW (assumed)**: The assumption cannot be verified at all, or the verification returned an ambiguous or potentially stale result. **Do not proceed.** Either escalate to a human or substitute a reversible alternative (draft PR instead of merge; backup before delete; dry-run mode before deploy).
+- **MODERATE (inferred)**: The assumption could not be directly verified, but strong proxies exist (e.g., tests passed locally, CI was green 5 minutes ago, no conflicting agent is known to be running). MODERATE confidence is acceptable for lower-cost irreversible actions where reverting is practical (e.g., merging a PR where a revert commit is straightforward). For high-cost irreversible actions — production deploys, permanent deletes, external notifications — require HIGH confidence or escalate.
+- **LOW (assumed)**: The assumption cannot be verified at all, or the verification returned an ambiguous or potentially stale result. **Do not proceed.** Either escalate to a human or substitute a reversible alternative (draft PR instead of merge; request human to trigger delete; dry-run mode before deploy).
 
 ### Gate log format
 
@@ -127,9 +127,9 @@ When confidence is LOW, prefer a reversible alternative over blocking the task e
 | Intended irreversible action | Reversible substitute |
 |---|---|
 | Merge PR | Open final review comment; request human to merge |
-| Delete branch | Rename branch with `archived/` prefix; delete after 7-day hold |
+| Delete branch | Request human to delete directly, or open a tracking issue to defer deletion — do not rename in-place (branch renames are themselves external mutations that can break open PRs, CI config, and automation keyed to the original ref) |
 | Deploy to production | Deploy to staging; request human confirmation for production |
-| Send webhook/email | Log payload to file; request human to trigger send |
+| Send webhook/email | Write payload to a staging sink or dry-run endpoint; request human to trigger the production send |
 | Push to protected branch | Open a PR targeting the protected branch instead |
 
 The goal is not to prevent progress but to preserve optionality until confidence is sufficient.
