@@ -48,6 +48,8 @@ The progress signal must be concrete and measurable for the specific task. Examp
 
 Choose a signal that **cannot stay identical if real progress is occurring**. "I'm still thinking about it" doesn't count.
 
+**Canonicalization note**: Some signals contain nondeterministic noise — stack traces include memory addresses, test output includes timestamps, search results include ordering. Canonicalize before comparing: strip addresses and timestamps from stack traces, sort and deduplicate search result IDs, normalize whitespace. Without canonicalization, two runs with identical *meaningful* output can look superficially different and silently evade the stall detector.
+
 ### Step 2: Maintain a progress ledger
 
 Track state on the signal after each action:
@@ -62,18 +64,19 @@ for step in task_steps:
     execute(step)
     state_after = snapshot_progress_signal()
 
+    progress_ledger.append(state_after)  # record every step for escalation summary
+
     if state_after == state_before:
         stall_count += 1
     else:
         stall_count = 0
-        progress_ledger.append(state_after)
 
     if stall_count >= STALL_THRESHOLD:
         log_stall_and_escape()
         break
 ```
 
-The ledger itself is lightweight — store only the signal values (e.g., pass count, file hash, unique result IDs), not full output. A 3-item window is sufficient to detect stalls without accumulating context.
+The ledger records every step (not just progressing ones) so the escalation summary can report "Last observed values" accurately. Store only the canonicalized signal values (e.g., pass count, file hash, unique result IDs) — not full output. Prune to the last 10 entries to keep context bounded.
 
 ### Step 3: Stall-escape protocol
 
@@ -93,7 +96,17 @@ When the stall threshold is reached:
 
 ### Step 4: Reset on genuine progress
 
-The stall counter resets to zero whenever the progress signal advances. A pivot that produces a different (even worse) state still resets the counter — the agent has escaped the loop, even if it hasn't solved the problem. What matters is movement, not success.
+The stall counter resets to zero whenever the progress signal advances toward the goal. "Advances toward the goal" means the new state is closer to task completion — not just different from the previous step.
+
+**Oscillation trap**: If the progress signal is defined as "different from the previous step," an agent can oscillate between two equivalent-failure states (A → B → A → B) without ever advancing, and the stall counter resets at every transition. To prevent this, track whether the *new state has been seen before* in the ledger, not only whether it differs from the immediately preceding state. If the new state matches any prior ledger entry, treat the step as a stall rather than progress.
+
+```
+# Oscillation-aware version:
+if state_after == state_before or state_after in progress_ledger[-STALL_THRESHOLD:]:
+    stall_count += 1
+else:
+    stall_count = 0
+```
 
 ## Calibrating the threshold
 
