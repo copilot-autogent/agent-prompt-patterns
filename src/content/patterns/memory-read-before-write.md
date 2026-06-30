@@ -3,7 +3,7 @@ title: "Memory Read Before Write"
 category: "feedback-loops"
 evidenceLevel: "strong"
 summary: "Agents that write to shared persistent storage without reading first silently overwrite contributions from other agents or contexts. The pattern: always read a storage location in the current session before saving to it, and verify the topic name before creating new topics. Systems can enforce this with a three-layer guard (never-read, stale-file, stale-context) plus a topic name consistency check and append deduplication discipline."
-relatedPatterns: ["feedback-loop-via-memory", "observer-actor-separation", "bounded-autonomy", "strategic-recall-before-ideation", "belief-entropy-checkpointing"]
+relatedPatterns: ["feedback-loop-via-memory", "observer-actor-separation", "bounded-autonomy", "strategic-recall-before-ideation", "belief-entropy-checkpointing", "evidence-freshness-decay"]
 tags: ["memory", "shared-state", "safety", "multi-agent", "recall", "write-guard", "concurrency", "topic-naming", "lost-update"]
 ---
 

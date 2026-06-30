@@ -3,7 +3,7 @@ title: "Strategic Recall Before Ideation"
 category: "feedback-loops"
 evidenceLevel: "moderate"
 summary: "Before proposing improvements, ideation agents must recall synthesis memory first. Agents that scan the live system state without recalling domain research produce disproportionately tactical (polish/UX) proposals and miss the strategic opportunities hidden in synthesis topics."
-relatedPatterns: ["feedback-loop-via-memory", "observe-resolve-pairing", "proactivity-injection", "strategic-feeder-injection", "dedup-search-before-filing"]
+relatedPatterns: ["feedback-loop-via-memory", "observe-resolve-pairing", "proactivity-injection", "strategic-feeder-injection", "dedup-search-before-filing", "evidence-freshness-decay"]
 tags: ["memory", "ideation", "strategy", "backlog", "recall", "synthesis", "feedback-loops"]
 ---
 
