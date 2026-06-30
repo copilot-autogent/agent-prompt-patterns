@@ -2,8 +2,8 @@
 title: "Evidence Freshness Decay"
 category: "memory-management"
 evidenceLevel: "strong"
-summary: "Agents cache observations (file reads, search results, status checks) at task start, then act on them many steps later when the world has changed. A PR that was open may now be merged; a file that didn't exist may now be present; a test that was failing may have been fixed by a concurrent sprint. Assign a TTL to each piece of cached evidence; re-verify before acting if TTL has expired. State explicitly when acting on stale data that cannot be re-verified."
-relatedPatterns: ["memory-read-before-write", "enumeration-first-verification", "sprint-completion-verification", "strategic-recall-before-ideation"]
+summary: "Agents cache observations (file reads, search results, GitHub state, memory topics) at task start, then act on them many steps later when the world has changed. Assign a TTL to each piece of cached evidence; re-verify before acting if TTL has expired or a forced re-verify trigger applies. State explicitly when acting on stale data that cannot be re-verified."
+relatedPatterns: ["memory-read-before-write", "enumeration-first-verification", "sprint-completion-verification", "strategic-recall-before-ideation", "uncertainty-gated-irreversible-action"]
 tags: ["memory", "freshness", "ttl", "staleness", "re-verify", "caching", "snapshot", "state-verification", "multi-agent", "uncertainty"]
 ---
 
@@ -42,10 +42,10 @@ When reading evidence, mentally (or explicitly) note when you read it and how lo
 
 | Evidence type | Suggested TTL | Rationale |
 |---|---|---|
-| File contents (own repo, same session) | 30 min | Files change slowly within a session |
+| File contents (own repo, same session) | 30 min (read-only use) | Files change slowly within a session; re-read immediately before any write (see *Memory Read Before Write*) |
 | GitHub issue / PR state | 10 min | PRs merge and issues close quickly |
 | CI / deploy status | 5 min | Builds finish while you work |
-| Memory topics | 1 session | Re-read at session start; stale across restarts |
+| Memory topics | 1 session or 4 h, whichever is shorter | Re-read at session start; long-running sessions accumulate hours of drift |
 | External API responses | 5–15 min | Rate-limited; world changes |
 | Sprint agent summaries | Verify before trusting | Self-reports can over-claim |
 | Snapshot documents (manifests, generated JSON) | 24 h max | Point-in-time export; world diverges fast |
@@ -63,6 +63,7 @@ If yes → re-read the source before proceeding.
 Some situations require fresh reads even if the TTL has not expired:
 
 - **Before any irreversible action** (merge, delete, close, deploy) — see *Uncertainty-Gated Irreversible Action*
+- **Before any read-modify-write on shared state** — re-read the source immediately before writing, regardless of when you last read it (see *Memory Read Before Write*)
 - **When evidence was sourced from a different session or agent** — load time is unknown; treat as potentially stale
 - **When the task depends on time-sensitive state** — CI result, deploy status, issue state before closing
 - **When re-seeding from a snapshot older than 24 h** — diff against current live state before bulk-applying
@@ -112,6 +113,11 @@ pr_state = github_get_pr(105)  # fresh API call
 issue_state = github_get_issue(65)
 if pr_state.merged and issue_state.closed:
     mark_issue_done(65)
+else:
+    # Summary over-claimed: surface the mismatch and re-schedule
+    log_mismatch("sprint-42 claimed merged/closed but actual state: "
+                 f"PR merged={pr_state.merged}, issue closed={issue_state.closed}")
+    re_schedule_work(65)
 ```
 
 ## Evidence
