@@ -3,7 +3,7 @@ title: "Dedup-Search Before Autonomous Issue Filing"
 category: "agent-autonomy"
 evidenceLevel: "strong"
 summary: "Before filing any new issue in an autonomous cron, perform two independent keyword searches against open AND closed issues. Without a dedup check, agents refile already-resolved items after memory loss, produce same-concept duplicates with different titles, and cause cross-cron collisions — each variant wastes a full sprint cycle on already-shipped work."
-relatedPatterns: ["strategic-recall-before-ideation", "constraint-falsification", "circuit-breaker"]
+relatedPatterns: ["strategic-recall-before-ideation", "constraint-falsification", "circuit-breaker", "staggered-task-spawning"]
 tags: ["autonomy", "deduplication", "issue-filing", "backlog", "search", "idempotency", "cron", "memory-loss"]
 ---
 
@@ -177,3 +177,4 @@ If issues were found but judged non-overlapping, list them:
 - **[Strategic Recall Before Ideation](/agent-prompt-patterns/patterns/strategic-recall-before-ideation)** — mandates recalling synthesis memory (internal) before generating proposals; Dedup-Search is the external equivalent — recalling existing issues before filing them. The two patterns compose: recall memory for strategic direction, search issues for dedup, then file.
 - **[Constraint Falsification Before Planning](/agent-prompt-patterns/patterns/constraint-falsification)** — falsifies capability assumptions before building plans on them; Dedup-Search applies the same falsification discipline to the assumption "this hasn't been filed yet" before committing to filing.
 - **[Circuit Breaker for Recurring Agent Tasks](/agent-prompt-patterns/patterns/circuit-breaker)** — auto-disables tasks that produce repeated low-value output; Dedup-Search prevents a specific failure mode the circuit breaker can't detect — a task that successfully files issues, but files duplicates that each look like novel value on the surface.
+- **[Staggered Task Spawning](/agent-prompt-patterns/patterns/staggered-task-spawning)** — mitigates the residual race condition: staggering cron execution windows ensures agents don't run simultaneously, reducing the window in which two agents can each see 0 dedup results before the other has filed.
