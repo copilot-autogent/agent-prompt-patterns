@@ -1,8 +1,8 @@
 ---
 title: "Evidence Freshness Decay"
-category: "memory-management"
+category: "agent-autonomy"
 evidenceLevel: "strong"
-summary: "Agents cache observations (file reads, search results, GitHub state, memory topics) at task start, then act on them many steps later when the world has changed. Assign a TTL to each piece of cached evidence; re-verify before acting if TTL has expired or a forced re-verify trigger applies. State explicitly when acting on stale data that cannot be re-verified."
+summary: "Agents cache observations at task start and act on them later when the world has changed; assign a TTL to each piece of evidence and re-verify before acting when TTL expires or a forced re-verify trigger applies. When re-verify is blocked, acknowledge the staleness explicitly and prefer reversible actions."
 relatedPatterns: ["memory-read-before-write", "enumeration-first-verification", "sprint-completion-verification", "strategic-recall-before-ideation", "uncertainty-gated-irreversible-action"]
 tags: ["memory", "freshness", "ttl", "staleness", "re-verify", "caching", "snapshot", "state-verification", "multi-agent", "uncertainty"]
 ---
