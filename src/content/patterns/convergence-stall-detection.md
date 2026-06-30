@@ -55,7 +55,8 @@ Choose a signal that **cannot stay identical if real progress is occurring**. "I
 Track state on the signal after each action:
 
 ```
-progress_ledger = []
+seen_states = set()  # unbounded; detects cycles of any length
+progress_ledger = []  # bounded; provides last N values for escalation summary
 stall_count = 0
 STALL_THRESHOLD = 3
 MAX_LEDGER = 10
@@ -66,12 +67,13 @@ for step in task_steps:
     state_after = canonicalize(snapshot_progress_signal())
 
     # Oscillation-aware stall check: count if unchanged OR if state has cycled back
-    if state_after == state_before or state_after in progress_ledger:
+    if state_after == state_before or state_after in seen_states:
         stall_count += 1
     else:
         stall_count = 0
 
-    progress_ledger.append(state_after)  # record every step for escalation summary
+    seen_states.add(state_after)
+    progress_ledger.append(state_after)  # for human-readable escalation summary
     if len(progress_ledger) > MAX_LEDGER:
         progress_ledger = progress_ledger[-MAX_LEDGER:]
 
@@ -80,7 +82,7 @@ for step in task_steps:
         break
 ```
 
-`canonicalize()` strips nondeterministic noise from the signal (timestamps, memory addresses, result ordering) so that two semantically-identical states compare equal. The ledger records every step so the escalation summary can report "Last observed values" accurately. Capped at 10 entries to keep context bounded.
+Two data structures serve different purposes: `seen_states` is an unbounded set used for oscillation detection (catches cycles of any length), while `progress_ledger` is a bounded list of the last 10 states used to populate the "Last observed values" field in the escalation summary. They are updated after the stall check to avoid self-matching.
 
 ### Step 3: Stall-escape protocol
 
@@ -127,12 +129,12 @@ STALL DETECTED — [unchanged | oscillation] after N consecutive steps.
 Progress signal: [what was being tracked]
 Last observed values: [ledger entries for last N steps]
 Stall type: [consecutive unchanged | cycling between states A/B/C]
-Attempted strategies: [list of distinct approaches tried]
+Attempted strategies: [agent-described — distinct approaches tried, e.g. "patched line 42", "re-read error from scratch"]
 Hypothesis: [most likely root cause, even if unverified]
 Suggested next step: [what a human should try, or what information would unblock]
 ```
 
-This summary is the minimum actionable output of a stalled run. A timeout with no diagnosis is a failure; a stall summary with a clear hypothesis is a useful artifact.
+`Last observed values` is auto-populated from the bounded `progress_ledger`. `Attempted strategies` is agent-described: the agent should summarize what qualitatively different actions it took (not a reprint of the ledger state values). A timeout with no diagnosis is a failure; a stall summary with a clear hypothesis is a useful artifact.
 
 ## Evidence
 
