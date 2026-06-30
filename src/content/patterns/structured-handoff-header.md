@@ -3,7 +3,7 @@ title: "Structured Handoff Header"
 category: "multi-agent"
 evidenceLevel: "moderate"
 summary: "Open every dispatched agent prompt with a compact YAML block encoding the full handoff context — intent, required context, success criteria, preconditions, explicit prohibitions, prior failed approaches, and memory update instructions. Free-text dispatch causes scope drift, silent failures, and unauthorized side-effects; a structured header makes the boundary explicit at the point of transfer."
-relatedPatterns: ["dispatcher-pattern", "sprint-continuity", "feedback-loop-via-memory"]
+relatedPatterns: ["dispatcher-pattern", "sprint-continuity", "feedback-loop-via-memory", "parallel-tool-call-batching"]
 tags: ["multi-agent", "handoff", "dispatch", "coordination", "spawn", "scope", "side-effects", "preconditions"]
 ---
 
@@ -135,3 +135,4 @@ The `ACK_REQUIRED` block requires the agent to open its first message with an ex
 - **[Dispatcher Pattern](/agent-prompt-patterns/patterns/dispatcher-pattern)** — handles routing and parallelism; this pattern specifies what goes *inside* the routed prompt
 - **[Sprint Continuity](/agent-prompt-patterns/patterns/sprint-continuity)** — specialized handoff for multi-session recurring agents; Structured Handoff Header generalizes to any single-dispatch agent
 - **[Feedback Loop via Memory](/agent-prompt-patterns/patterns/feedback-loop-via-memory)** — handles result capture across sessions; `memory_to_update` in the handoff header provides the capture instructions at dispatch time rather than leaving them implicit
+- **[Parallel Tool Call Batching](/agent-prompt-patterns/patterns/parallel-tool-call-batching)** — the `required_context` field in the handoff header maps directly to a parallel read batch at the receiving agent's start: issuing all required context reads in one batched response rather than sequentially.

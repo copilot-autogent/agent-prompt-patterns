@@ -85,7 +85,9 @@ The core principle is still *knowability upfront* — if you could not have issu
 | Run dedup searches for multiple candidates | Batch all search calls in one response |
 | Validate multiple independent conditions | Batch all check calls in one response |
 
-**Note on remote/API tool calls**: Independent API endpoints can still share rate limits, auth token budgets, or server-side ordering constraints. Verify that concurrent calls to the same service are safe before batching them. Filesystem and local tool calls (read, grep, glob) do not have this constraint.
+**Note on remote/API tool calls**: Independent API endpoints can still share rate limits, auth token budgets, or server-side ordering constraints. Verify that concurrent calls to the same service are safe before batching them.
+
+**Note on local/filesystem tool calls**: Local reads (read, grep, glob) typically do not share rate limits or auth budgets, but they can still be throttled by executor concurrency caps or shared CPU/IO contention under high load. For most workloads, batching local calls is safe; for very high-parallelism scenarios, verify the executor's concurrency ceiling.
 
 ### Anti-pattern: spurious sequential dependency
 
@@ -106,19 +108,19 @@ The BAD version isn't just slow — it creates the illusion that each subsequent
 
 ## Evidence
 
-**Runtime assumption**: The evidence below assumes the agent executor dispatches tool calls issued in a single response concurrently, rather than serializing them internally. Many modern agent runtimes (including tool-augmented language model APIs) do dispatch concurrent tool calls in parallel. If an executor serializes all tool calls, the latency benefit disappears, though the turn-budget benefit (fewer round trips) still holds. Verify your runtime's behavior before relying on wall-clock estimates.
+**Runtime assumption**: The evidence below assumes the agent executor dispatches tool calls issued in a single response concurrently, rather than serializing them internally. Many modern agent runtimes (including tool-augmented language model APIs) do dispatch concurrent tool calls in parallel. If an executor serializes all tool calls, the wall-clock benefit disappears, though the turn-count benefit (fewer round trips) may still apply depending on how turns are counted.
 
 **Empirical wall-clock measurement**: In a production agentic workflow (executor confirmed to dispatch concurrent calls), independent file reads measured ~300–500ms each. Tasks requiring 5 independent reads took ~350ms batched vs. ~1,500ms sequential — consistent with a 4–5× wall-clock improvement. The improvement scales approximately linearly with the number of independent calls up to the executor's concurrency limit.
 
-**Turn budget efficiency**: Agent environments with turn limits (e.g., 40-turn sprints) complete meaningfully more work per turn when parallel batching is applied consistently. A single-turn batch of 5 reads consumes 1 turn vs. 5 turns sequential — a 5-turn savings that compounds across an investigation phase. This benefit holds regardless of whether the executor parallelizes the calls.
+**Turn budget efficiency**: Agent environments that measure budgets per assistant turn (a common billing model) complete meaningfully more work per budget unit when parallel batching is applied consistently. A single-turn batch of 5 reads consumes 1 turn vs. 5 turns sequential — a 5-turn saving that compounds across an investigation phase. Note: runtimes that bill per tool invocation rather than per turn do not see a budget saving from batching, only a latency saving.
 
-**Amdahl's Law applies**: Total speedup is bounded by the sequential portion. Parallelizing independent calls directly reduces the sequential fraction, improving throughput at the task level. For an investigation phase composed of N independent reads (a common case), the sequential fraction approaches 0% when all reads are batched — the entire phase becomes a single turn.
+**Amdahl's Law framing**: Total speedup is bounded by the sequential portion of execution. Parallelizing independent calls reduces the fraction of time spent on those specific calls, improving throughput for that portion of the task. For an investigation phase dominated by independent reads, this fraction can be substantial — batching converts N sequential waits into one concurrent wait. The dispatch overhead, result aggregation, and the follow-up response turn remain serial, so the speedup ceiling is well below N× for realistic workloads.
 
 **Operational guideline validation**: This pattern is codified in the operational guidelines of at least one production agentic system as a critical discipline: "When you need to perform multiple independent operations, make ALL tool calls in a SINGLE response." The fact that this rule was deemed important enough to mark as critical — and that it is frequently violated — confirms it is a validated, non-obvious pattern worth explicit documentation.
 
 ## Tradeoffs
 
-**Benefit**: Linear latency reduction in investigation phases (on executors that parallelize). Turn budget preserved for implementation and verification rather than consumed by sequential reads.
+**Benefit**: Latency reduction in investigation phases (on executors that parallelize). Turn budget preserved for implementation and verification rather than consumed by sequential reads (on per-turn billing models).
 
 **Cost**: Requires upfront reasoning about which calls are truly independent before issuing any of them. Agents optimizing locally ("read this, then decide next") must shift to task-level planning ("enumerate all reads the task requires, then issue them together").
 
@@ -127,7 +129,7 @@ The BAD version isn't just slow — it creates the illusion that each subsequent
 - **Partial batching**: Batching 3 of 5 independent calls while issuing the remaining 2 sequentially is better than none, but misses savings. Once in batch-mode thinking, enumerate all independent calls in the current scope before issuing the response.
 - **Batch size and context window**: Issuing 20 parallel reads in one response returns 20 results in the next turn. For very large batches, this can create a dense result turn that compresses poorly against context limits. For practical purposes, batch within a scope (e.g., "all files relevant to this module") rather than across the entire task at once.
 - **Side-effecting tool calls**: Non-idempotent calls that modify state (write, create, delete) should only be batched if their independent execution order is genuinely safe. Two writes to the same file are not safe to batch. Two writes to different files typically are.
-- **Executor serialization**: If your runtime serializes tool calls internally, wall-clock gains are eliminated. The turn-budget saving still applies, but claims about latency reduction require verifying the executor's concurrency behavior.
+- **Executor serialization**: If your runtime serializes tool calls internally, wall-clock gains are eliminated. The turn-budget saving also disappears on per-invocation billing models. Verify your runtime's behavior before relying on either benefit.
 
 ## Related Patterns
 
