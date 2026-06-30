@@ -3,7 +3,7 @@ title: "Enumeration-First Verification"
 category: "task-design"
 evidenceLevel: "moderate"
 summary: "When an agent claims 'all N items satisfy property P', it typically supports this with a manual trace. Traces reliably miss defects because confidence compounds without actually testing the universal quantifier. For any batch claim, write an enumeration validator that checks every item programmatically — enumerate both input-legality invariants and output-correctness invariants."
-relatedPatterns: ["empirical-validation-loop", "side-effect-verification", "pre-commit-planning-phase"]
+relatedPatterns: ["empirical-validation-loop", "side-effect-verification", "pre-commit-planning-phase", "parallel-tool-call-batching"]
 tags: ["verification", "batch-validation", "invariants", "quality", "datasets", "enumeration", "testing", "silent-failure"]
 ---
 
@@ -196,3 +196,4 @@ The autogent codebase applies enumeration-first verification in several producti
 - **[Empirical Validation Loop](/agent-prompt-patterns/patterns/empirical-validation-loop)** — validates hypotheses via measurement across agent runs; this pattern validates batch properties via enumeration before the batch ships. They compose: use Empirical Validation Loop to learn which properties need enumeration, then use this pattern to enforce them.
 - **[Side-Effect Verification](/agent-prompt-patterns/patterns/side-effect-verification)** — verifies post-conditions after individual operations; this pattern verifies invariants across entire collections. Side-Effect Verification asks "did this one action produce its intended outcome?"; Enumeration-First asks "do all N outputs satisfy the stated property?"
 - **[Pre-Commit Planning Phase](/agent-prompt-patterns/patterns/pre-commit-planning-phase)** — the planning phase is the right moment to ask "what enumerable invariants must this batch satisfy before commit?" Writing the invariant checks during planning, rather than after generation, ensures they're specific enough to be implemented.
+- **[Parallel Tool Call Batching](/agent-prompt-patterns/patterns/parallel-tool-call-batching)** — enumerating all items to check before verifying any of them is the prerequisite for parallel verification: once you have the full set, you can issue all verification calls in a single batched response instead of sequentially checking each item.
