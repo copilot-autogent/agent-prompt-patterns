@@ -2,7 +2,7 @@
 title: "Dedup-Search Before Autonomous Issue Filing"
 category: "agent-autonomy"
 evidenceLevel: "strong"
-summary: "Before filing any new issue in an autonomous cron, perform at minimum one keyword search against open AND closed issues. Without a dedup check, agents refile already-resolved items after memory loss, produce same-concept duplicates with different titles, and cause cross-cron collisions — each variant wastes a full sprint cycle on already-shipped work."
+summary: "Before filing any new issue in an autonomous cron, perform two independent keyword searches against open AND closed issues. Without a dedup check, agents refile already-resolved items after memory loss, produce same-concept duplicates with different titles, and cause cross-cron collisions — each variant wastes a full sprint cycle on already-shipped work."
 relatedPatterns: ["strategic-recall-before-ideation", "constraint-falsification", "circuit-breaker"]
 tags: ["autonomy", "deduplication", "issue-filing", "backlog", "search", "idempotency", "cron", "memory-loss"]
 ---
@@ -15,7 +15,7 @@ Four failure variants:
 
 **Same concept, different title**: "Structured Handoff Header" and "Agent Dispatch Context Block" describe the same pattern. Both get filed. Both get sprinted. One sprint's output becomes dead code — the feature already landed under the other issue's PR.
 
-**Reopened closed items**: A workspace wipe or memory loss event causes the ideation cron to "rediscover" already-resolved issues. The pattern was shipped in a sprint three weeks ago; the agent has no memory of this and refiles it. A new sprint reinvents work that already exists in `main`.
+**Reopened closed items**: A workspace wipe or memory loss event causes the ideation cron to "rediscover" already-resolved issues. The pattern was shipped in a sprint three weeks ago; the agent has no memory of this and refiles it. A new sprint reinvents work that already exists in the release branch.
 
 **Cross-cron collision**: Two independent crons (an ideation cron and a monitoring cron) both identify the same gap on the same day. Each files independently. Neither searches for the other's issue. Two sprints run in parallel; the second one merges dead code on top of the first.
 
@@ -40,7 +40,7 @@ The pattern does NOT apply to:
 
 ## Solution
 
-**Before filing any autonomously-generated issue, run at minimum one keyword search against both open and closed issues.**
+**Before filing any autonomously-generated issue, run two independent keyword searches against both open and closed issues.**
 
 ### Step 1 — Extract 2–4 search keywords
 
@@ -51,7 +51,7 @@ From the proposed issue title and concept, extract the fewest words that uniquel
 Keywords: "dedup", "duplicate", "issue filing", "search before"
 ```
 
-When the concept can be described multiple ways, generate two independent keyword sets representing different phrasings of the same idea.
+Generate two independent keyword sets representing different phrasings of the same idea. A single phrasing misses title variations — run both before deciding.
 
 ### Step 2 — Search open AND closed issues, issues only
 
@@ -72,15 +72,15 @@ Run both keyword searches before making a filing decision.
 
 ### Step 3 — Inspect matches and determine closure disposition
 
-When a matching closed issue is found, call `github-issue_read method=get` on that issue number to retrieve the `state_reason` field. GitHub exposes two close-state values: `completed` (work was done and shipped) and `not_planned` (declined or out of scope). The `duplicate` label on an issue indicates it was closed in favor of another issue — check that label separately, as it is not reflected in `state_reason`.
+When a matching closed issue is found, call `github-issue_read method=get` on that issue number to retrieve the `state_reason` field. GitHub exposes two close-state values relevant here: `completed` (set when the issue was manually closed as done — does NOT prove code was deployed or merged) and `not_planned` (declined or out of scope). For issues closed as duplicates, GitHub records a timeline reference event ("Marked as duplicate of #N") visible in the issue detail; a `duplicate` label may also be present but is not automatically applied by GitHub and should be treated as a secondary signal.
 
 | Signal | Decision |
 |--------|----------|
 | Same concept, same title | **Skip** — exact duplicate |
 | Same concept, different title (keyword overlap ≥ 50%) | **Skip** — semantic duplicate |
-| Closed issue, `state_reason: completed` | **Investigate before skipping** — fetch the linked PR and confirm it was merged into `main`; manually closed issues may set `completed` without shipping any code |
+| Closed issue, `state_reason: completed` | **Investigate before skipping** — check whether a PR linked to this issue was actually merged to the repository's release branch; manually closed issues may set `completed` without any code being deployed |
 | Closed issue, `state_reason: not_planned` | **Read closure notes** — if the reason still applies, skip; if context has changed, consider refiling with an explicit reference to the prior closure |
-| Closed issue, `duplicate` label present | **Follow the duplicate chain** — find the canonical issue and check its status |
+| Closed issue, duplicate timeline event or `duplicate` label | **Follow the duplicate chain** — find the canonical issue and check its status |
 | Closed issue, `state_reason` is `null` (legacy) | **Read issue body and labels** for "won't fix", "completed", or "by design" signals |
 | Complementary concept (same category, different problem) | **File** — not a duplicate |
 | No matches in either search | **File** — likely novel |
@@ -117,13 +117,18 @@ If issues were found but judged non-overlapping, list them:
    - Search 1: github-search_issues query="is:issue [keyword set 1]" owner=OWNER repo=REPO
    - Search 2: github-search_issues query="is:issue [keyword set 2]" owner=OWNER repo=REPO
    (Do NOT add is:open — search open and closed issues.)
+   If total_count > 10 on either search, your keywords are too broad — narrow them
+   and re-search rather than scanning pages. Broad queries can push the actual
+   duplicate past the first page of results.
 3. If total_count >= 1: inspect titles for semantic overlap.
 4. If meaningful overlap: call github-issue_read method=get on the matching issue to
-   check state_reason (completed / not_planned) and labels (duplicate).
-   - state_reason: completed → also verify the associated PR was merged into main
-     before treating as "already shipped"
+   check state_reason (completed / not_planned) and the issue timeline for duplicate
+   references.
+   - state_reason: completed → also check whether a linked PR was actually merged
+     to the repository's release branch before treating as "already shipped"
    - state_reason: not_planned → read closure notes before deciding
-   - duplicate label → follow the chain to the canonical issue
+   - duplicate timeline reference or duplicate label → follow the chain to the
+     canonical issue
 5. If no overlap, or all matches are judged non-overlapping: proceed to file.
 6. In the filed issue, include:
    - The keywords you searched
@@ -143,7 +148,7 @@ If issues were found but judged non-overlapping, list them:
 
 ## Tradeoffs
 
-**Benefit**: Substantially reduces duplicate sprint cycles caused by the four failure variants above. The search cost is 1–2 API calls (under 5 seconds), plus one extra `get` call per matching closed issue. The cost of a missed duplicate is a full sprint cycle (15–60 minutes) plus PR cleanup, dead code removal, and issue management overhead.
+**Benefit**: Substantially reduces duplicate sprint cycles caused by the four failure variants above. The search cost is 2 API calls (under 5 seconds), plus one extra `get` call per matching closed issue. The cost of a missed duplicate is a full sprint cycle (15–60 minutes) plus PR cleanup, dead code removal, and issue management overhead.
 
 **Cost**: Adds a mandatory pre-filing step. In high-throughput ideation agents, this adds 2–5 seconds per proposal. Acceptable in all measured cases.
 
@@ -155,11 +160,13 @@ If issues were found but judged non-overlapping, list them:
 
 - **Missing `is:issue` filter**: GitHub's search endpoint returns both issues and pull requests by default. A PR with a matching title will satisfy the dedup check and suppress a legitimate issue filing. Always include `is:issue` explicitly in every dedup query.
 
-- **`completed` ≠ shipped**: An issue closed with `state_reason: completed` was marked complete by a human. That does not guarantee the associated PR was merged, passed tests, or reached `main`. Verify the linked PR's merge status before treating `completed` as proof the feature was shipped.
+- **`completed` ≠ shipped**: An issue closed with `state_reason: completed` was manually marked done. That does not guarantee the associated PR was merged, passed tests, or reached the release branch. Verify the linked PR's merge status before treating `completed` as proof the feature was deployed.
+
+- **Duplicate detection requires checking the timeline, not just labels**: GitHub does not automatically apply a `duplicate` label when an issue is marked as a duplicate. The primary evidence is a timeline reference event ("Marked as duplicate of #N"). The `duplicate` label is a secondary heuristic that may or may not be present. Relying on the label alone will miss many duplicate chains.
 
 - **Keyword specificity trap**: Keywords that are too generic ("pattern", "agent", "task") return hundreds of results and make the dedup check useless. Keywords that are too specific ("dedup-search-before-filing") may miss semantic duplicates. Use 2–3 mid-specificity domain terms — specific enough to narrow results, broad enough to catch title variations.
 
-- **Multi-keyword coverage**: A single search misses title variations. "Structured handoff" and "agent dispatch context" describe the same thing. Use at least two independent keyword sets representing different phrasings of the same concept. If both return 0 results, the concept is likely novel.
+- **Pagination cuts off results**: If total_count is large but you only inspect the first page, the actual duplicate may be buried. When a search returns many results, narrow the keywords and re-run rather than paginating — a more precise query surfaces better matches.
 
 - **Trusting 0 results too quickly**: A search returning 0 results is evidence the exact query wasn't matched — it is not proof the concept doesn't exist. Run a second search with a different phrasing before concluding "no duplicate found."
 

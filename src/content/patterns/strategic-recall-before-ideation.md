@@ -3,7 +3,7 @@ title: "Strategic Recall Before Ideation"
 category: "feedback-loops"
 evidenceLevel: "moderate"
 summary: "Before proposing improvements, ideation agents must recall synthesis memory first. Agents that scan the live system state without recalling domain research produce disproportionately tactical (polish/UX) proposals and miss the strategic opportunities hidden in synthesis topics."
-relatedPatterns: ["feedback-loop-via-memory", "observe-resolve-pairing", "proactivity-injection", "strategic-feeder-injection"]
+relatedPatterns: ["feedback-loop-via-memory", "observe-resolve-pairing", "proactivity-injection", "strategic-feeder-injection", "dedup-search-before-filing"]
 tags: ["memory", "ideation", "strategy", "backlog", "recall", "synthesis", "feedback-loops"]
 ---
 
@@ -123,3 +123,4 @@ Compared agent trace for realestate-ideation (scanned site → filed 5 polish is
 - **[Observe-Resolve Pairing](/agent-prompt-patterns/patterns/observe-resolve-pairing)** — ideation (observe) should be paired with a dispatcher that routes strategic proposals through a higher-scrutiny review path than polish items
 - **[Proactivity Injection](/agent-prompt-patterns/patterns/proactivity-injection)** — when synthesis memory surfaces a strategic opportunity, the ideation agent should propose it proactively, not wait for the user to ask
 - **[Strategic Context Injection at the Feeder Layer](/agent-prompt-patterns/patterns/strategic-feeder-injection)** — the pipeline-architecture-level formulation of this principle; where this pattern targets a single ideation agent, that pattern addresses the feeder layer of a structured feeder → scheduler → executor pipeline
+- **[Dedup-Search Before Autonomous Issue Filing](/agent-prompt-patterns/patterns/dedup-search-before-filing)** — the external complement to this pattern: after recalling synthesis memory for strategic direction, search existing issues before filing to prevent redundant entries
