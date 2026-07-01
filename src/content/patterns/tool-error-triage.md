@@ -62,9 +62,9 @@ Classify before retrying. Don't wait for a pattern to emerge across retries.
 
 **Semantic indicators**: the call *succeeds* (HTTP 200) but returns a shape that contradicts a *known domain invariant* — e.g., a CI check count that the agent just verified is non-zero now reports 0, a list the agent knows is non-empty is empty. Only flag as semantic when you have a corroborating read confirming the expectation; don't classify legitimate empty state as a programming error.
 
-**Authentication failures**: treat as permanent-by-default when isolated (a single agent, a single tool). However, if multiple agents fail with auth errors concurrently, the correlated pattern suggests a transient infrastructure outage (not a token scope problem). In that case, apply transient/external retry logic with extended backoff (max 2) before escalating.
+**Authentication failures**: treat as permanent by default — an isolated auth failure on a single tool most likely means wrong scope or expired credentials. However, a *single agent* seeing repeated auth failures within a short window (e.g., 3 failures in under 2 minutes, across different tools or calls) is an observable signal that may indicate transient infrastructure rather than a credential problem. In that case, apply one retry with extended backoff (15s) before escalating. Treat as transient/external (max 2 retries) when retrying. The autogent #728/#730 thread documents this pattern: what appeared to be credential failures were a transient infra outage.
 
-**Ambiguous (500)**: Could be transient or permanent. Treat as transient once; if it repeats, treat as permanent and escalate.
+**Ambiguous (500)**: Could be transient or permanent. Apply transient/external backoff (max 2 retries at 15s and 45s). If still failing after 2 retries, escalate — the upstream may have a sustained outage, but the ceiling prevents infinite spin.
 
 ### Decision procedure
 
@@ -75,10 +75,15 @@ on tool_error(e):
   if classification.is_transient:
     if retry_count < MAX_RETRIES[classification.domain]:
       wait(backoff(retry_count))
-      # For write operations: re-read state before retrying to avoid duplicate
-      # side effects when the upstream committed before the timeout was observed.
+      # For idempotent writes: re-read state first to confirm the operation
+      # didn't already commit before the timeout. Non-idempotent writes without
+      # a stable lookup key (no way to confirm duplication) should NOT be
+      # retried automatically — escalate instead to avoid duplicate side effects.
       if is_write_operation(e):
-        confirm_not_already_applied()  # e.g., re-fetch the resource
+        if is_idempotent_or_has_lookup_key(e):
+          confirm_not_already_applied()  # e.g., re-fetch the resource
+        else:
+          escalate("Non-idempotent write timed out — cannot safely retry without risk of duplication")
       retry()
     else:
       escalate("Transient error not resolved after {MAX_RETRIES} retries: {e}")
@@ -87,12 +92,12 @@ on tool_error(e):
     log("Permanent error: {e}. Aborting this path.")
     try_alternative_approach() OR escalate_to_user()
 
-  else:  # ambiguous
-    if retry_count == 0:
-      wait(backoff(0))
-      retry_once()
+  else:  # ambiguous (500)
+    if retry_count < 2:
+      wait(backoff(retry_count, domain="external"))  # use external delay: 15s, 45s
+      retry()
     else:
-      escalate("Repeated ambiguous error after retry: {e}")
+      escalate("Repeated ambiguous error after 2 retries: {e}")
 ```
 
 `MAX_RETRIES`: 3 for own-domain transient, 2 for external transient.
@@ -121,7 +126,7 @@ Permanent errors that are "fixable" (e.g., wrong token scope) should be escalate
 
 **CAS conflict recovery (issue #56 sprint)**: A concurrent manifest modification caused a "CAS conflict" error during a sprint. The ad-hoc workaround — a single retry — worked immediately. This is a textbook transient/own-domain error. The workaround was correct but applied without a framework; the same logic needed to be re-derived in later sprints.
 
-**Auth-degradation thread (autogent #728/#730)**: Multiple sprint agents died on the same day due to auth failures. Post-mortem showed the failures were a transient infrastructure issue, not permanent auth revocations. Agents that aborted immediately discarded recoverable work. With backoff retry (own-domain transient, max 3), most of those sprints would have recovered within the backoff window.
+**Auth-degradation thread (autogent #728/#730)**: Multiple sprint agents died on the same day due to auth failures. Post-mortem showed the failures were a transient infrastructure issue, not permanent auth revocations. Agents that aborted immediately discarded recoverable work. Under this pattern's classification, the correlated failures (many agents, same window) classify as transient/external — max 2 retries with 15s and 45s backoff. Most of those sprints would have recovered within the backoff window.
 
 **`get_status` semantic error (CONTEXT.md gotcha)**: `get_status` was returning 0 checks permanently — not because CI was pending, but because it was querying the wrong data for the intended purpose. The fix was to change the call (use `get` and check `mergeable_state === "clean"` instead). Retrying `get_status` would never have produced the correct answer. This is a permanent/semantic error; the correct response was to abort and fix the call.
 
