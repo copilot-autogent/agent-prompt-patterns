@@ -3,7 +3,7 @@ title: "Verification Before Completion"
 category: "task-design"
 evidenceLevel: "strong"
 summary: "Agents declare tasks 'done' without confirming the outcome materialized, creating silent failures: broken deploys, crashed processes, test suites never run, PRs merged while CI was pending. Before claiming success on any task with an observable side-effect, produce and inspect concrete evidence the effect occurred."
-relatedPatterns: ["side-effect-verification", "deploy-lag-verification", "sprint-completion-verification", "evidence-freshness-decay", "tool-error-triage"]
+relatedPatterns: ["side-effect-verification", "deploy-lag-verification", "sprint-completion-verification", "evidence-freshness-decay", "tool-error-triage", "context-window-budgeting"]
 tags: ["reliability", "verification", "silent-failure", "task-completion", "evidence", "deployment", "testing"]
 ---
 
@@ -39,10 +39,10 @@ The evidence type must match the task type:
 
 | Task type | Minimum verification |
 |---|---|
-| Deploy | HTTP GET of a live URL returns expected content/status; or `node fetch`/curl against the specific endpoint, not a browser (browser disk-cache can serve stale content for minutes post-merge) |
+| Deploy | `node fetch`/curl to the specific endpoint (not a browser — disk-cache serves stale content for minutes post-merge). For static-HTML sites, HTTP 200 alone is insufficient: `index.html` can look correct while chunk loading or hydration is broken (see factor-dashboard #115 in Evidence). Also run a browser render check — confirm visible content rendered and zero failed resource loads — for any JS-heavy frontend |
 | Process start | Process listed in `ps`/status output AND responds to a health probe (`curl http://localhost:PORT/health`) |
 | Test run | Exit code + summary line confirms pass count; not just "tests ran" or absence of visible errors; use `test:coverage` variant where available to surface unhandled rejections |
-| GitHub merge | **Pre-merge**: `mergeable_state === "clean"` before calling merge. **Post-merge**: `grep` for a key change in `dist/` after the CI build completes, confirming the patch compiled into the running artifact |
+| GitHub merge | **Pre-merge**: `mergeable_state === "clean"` via `method=get` (not `get_status` — see anti-patterns). Note: `"clean"` requires branch-protection rules to be configured; in repos without protection rules, use CI check results directly. **Post-merge**: `grep` for a key change in `dist/` confirms the patch compiled into the artifact — combine with a process restart check ([Deploy-Lag Verification](/agent-prompt-patterns/patterns/deploy-lag-verification)) to confirm the live system is serving it |
 | Config change (`npm install`, `pip install`) | Re-run the dependent command (e.g., import the installed package) and confirm no install-time or import-time error |
 | File/memory write | Read back the written value and compare |
 
