@@ -71,7 +71,7 @@ OUT: src/utils/date.ts (shared utility — not touching even if related bugs exi
 
 ```
 ## Scope
-IN:  patterns/scope-boundary-declaration.md — new pattern file
+IN:  src/content/patterns/scope-boundary-declaration.md — new pattern file
 OUT: Any existing pattern files (no edits, even for related cross-references)
      Site config, layout, or navigation files
 ```
@@ -84,9 +84,10 @@ Every action taken after the scope declaration should be checked against it. Bef
 
 If the answer is no:
 
-1. Note the issue (a `// TODO: [description] (out of scope for this PR)` comment, or a new GitHub issue filed for it).
-2. Do NOT make the change in the current PR.
-3. Continue with the in-scope work.
+1. Record the discovery in the PR body or a new GitHub issue — do NOT touch the out-of-scope file.
+2. Continue with the in-scope work.
+
+Recording the discovery in the PR body is preferred: it is visible to reviewers without modifying any file, requires no additional permissions, and keeps the context in the change under review. Filing a separate issue is appropriate when the discovery is significant enough to track as independent work.
 
 The note or filed issue is the full response to an out-of-scope discovery. It does not warrant expanding the PR.
 
