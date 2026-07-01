@@ -58,9 +58,11 @@ Classify before retrying. Don't wait for a pattern to emerge across retries.
 
 **Transient indicators**: HTTP 429, 503, 504; "timeout"; "connection reset"; "CAS conflict"; "rate limit exceeded"
 
-**Permanent indicators**: HTTP 404, 422; "not found"; "already exists"; "invalid parameter"; "unsupported"; "authentication failed" (wrong scope — fix the token, not the retry count)
+**Permanent indicators**: HTTP 422; "already exists"; "invalid parameter"; "unsupported"; "authentication failed" (wrong scope — fix the token, not the retry count). HTTP 404 is *usually* permanent but has exceptions: a newly created branch, file, or check may return 404 during an eventual-consistency window (seconds to low minutes). If a 404 occurs on a resource you just created, retry once with backoff before treating it as permanent.
 
-**Semantic indicators**: the call *succeeds* (HTTP 200) but returns an unexpected shape — e.g., a field always null, a count always 0, a list that should be non-empty is always empty. This is a programming error in the call itself. No retry will change the response.
+**Semantic indicators**: the call *succeeds* (HTTP 200) but returns a shape that contradicts a *known domain invariant* — e.g., a CI check count that the agent just verified is non-zero now reports 0, a list the agent knows is non-empty is empty. Only flag as semantic when you have a corroborating read confirming the expectation; don't classify legitimate empty state as a programming error.
+
+**Authentication failures**: treat as permanent-by-default when isolated (a single agent, a single tool). However, if multiple agents fail with auth errors concurrently, the correlated pattern suggests a transient infrastructure outage (not a token scope problem). In that case, apply transient/external retry logic with extended backoff (max 2) before escalating.
 
 **Ambiguous (500)**: Could be transient or permanent. Treat as transient once; if it repeats, treat as permanent and escalate.
 
@@ -73,6 +75,10 @@ on tool_error(e):
   if classification.is_transient:
     if retry_count < MAX_RETRIES[classification.domain]:
       wait(backoff(retry_count))
+      # For write operations: re-read state before retrying to avoid duplicate
+      # side effects when the upstream committed before the timeout was observed.
+      if is_write_operation(e):
+        confirm_not_already_applied()  # e.g., re-fetch the resource
       retry()
     else:
       escalate("Transient error not resolved after {MAX_RETRIES} retries: {e}")
@@ -129,11 +135,12 @@ Permanent errors that are "fixable" (e.g., wrong token scope) should be escalate
 
 **Watch out for**:
 
-- **Misclassifying auth errors**: "Authentication failed" usually indicates a permanent scope issue (wrong token, expired token). Retrying it won't help. Treat auth failures as permanent unless you have specific evidence that the token was temporarily unavailable (e.g., the service explicitly says "token temporarily unavailable" — rare).
+- **Misclassifying auth errors**: A single isolated "Authentication failed" usually indicates a permanent scope issue (wrong token, expired token). Retrying won't help. However, if multiple agents fail with auth errors on the same timeframe, treat it as a transient infrastructure outage (see Diagnostic signals above). The autogent #728/#730 incident is the canonical example: auth failures that looked permanent were a correlated transient infra issue. Single failure → abort; correlated failures → retry with extended backoff.
 - **Retry amplification under load**: If many agents are hitting the same rate-limited upstream, simultaneous backoff retries with the same delay schedule produce synchronized retry storms. Add jitter (e.g., ±25% random variation on the delay) if operating in a multi-agent environment.
 - **Ambiguous 500s from broken deployments**: A 500 from a permanently broken service will keep returning 500 indefinitely. The "retry once for ambiguous" rule correctly limits this to one extra attempt before escalation.
 - **Escalation fatigue**: If escalations are too frequent (e.g., every transient error is surfaced), operators stop reading them. Reserve escalation for cases where the agent genuinely cannot proceed. Transient errors resolved within backoff should be logged, not escalated.
 - **Alternative approach loops**: When trying alternative approaches for permanent errors, cap the alternatives (e.g., max 2 alternatives before escalating). An uncapped alternative-search can itself become a soft infinite loop.
+- **String-matching brittleness**: The diagnostic signals above use HTTP codes and error substrings. Many tool wrappers normalize or wrap errors, dropping the original codes or messages. Where possible, prefer structured error metadata (status codes, error type fields) over substring matching. If the tool wrapper does not expose stable structured errors, treat classification as best-effort and bias toward "retry once" for genuinely ambiguous cases rather than immediate abort.
 
 ## Related Patterns
 
