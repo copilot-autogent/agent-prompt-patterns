@@ -79,6 +79,7 @@ Artifact: [PR #N merged {sha} | deploy {url} confirmed | memory topic {name} sav
 
 Phase N+1 goal: [concrete one-sentence goal]
 First step: [the exact first action the next session should take]
+Required context: [list only what the next session must load — files, memory topics, issue numbers]
 
 Key decisions made:
 - [decision 1 and rationale — enough for next session to not re-open it]
@@ -120,7 +121,7 @@ A phase is not complete until its artifact is independently verifiable. Verifica
 | Phase type | Required artifact | Verification method |
 |---|---|---|
 | Audit / research | Memory topic or saved document | `recall_memory(topic)` returns the findings |
-| Implementation | Merged PR with SHA | `git log` confirms SHA on main; dist/ contains the change |
+| Implementation | Merged PR with SHA | `git log` on the target branch confirms SHA; the change is visible at the expected location in the repo |
 | Deploy / release | Verified live URL | `verify_deploy(url)` returns `ok: true`, 0 JS errors |
 | Batch operation | Issue count or updated manifest | GitHub issue search or manifest `grep` confirms N items filed |
 

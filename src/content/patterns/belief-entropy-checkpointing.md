@@ -3,7 +3,7 @@ title: "Belief-Entropy Checkpointing"
 category: "feedback-loops"
 evidenceLevel: "emerging"
 summary: "Agents that save memory only at session end capture final state but lose decision rationale at earlier branch points. Successful agent trajectories show decreasing uncertainty about task state over time; failed ones show stagnant or increasing entropy. The pattern: checkpoint at high-uncertainty junctures — branch points, reversals, and unexpected outcomes — not only at session end."
-relatedPatterns: ["structured-handoff-header", "strategic-recall-before-ideation", "memory-read-before-write"]
+relatedPatterns: ["structured-handoff-header", "strategic-recall-before-ideation", "memory-read-before-write", "long-horizon-task-phasing"]
 tags: ["memory", "checkpointing", "uncertainty", "decision-rationale", "session-state", "branch-points", "reversals"]
 ---
 
