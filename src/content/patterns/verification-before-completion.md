@@ -2,7 +2,7 @@
 title: "Verification Before Completion"
 category: "task-design"
 evidenceLevel: "strong"
-summary: "Agents declare tasks 'done' after writing code, merging a PR, or starting a process — without confirming the outcome materialized. This creates silent failures: broken deploys, crashed processes, test suites that were never run, and PRs merged while CI was still pending. Before claiming success on any task with an observable side-effect, produce and inspect concrete evidence that the effect occurred."
+summary: "Agents declare tasks 'done' without confirming the outcome materialized, creating silent failures: broken deploys, crashed processes, test suites never run, PRs merged while CI was pending. Before claiming success on any task with an observable side-effect, produce and inspect concrete evidence the effect occurred."
 relatedPatterns: ["side-effect-verification", "deploy-lag-verification", "sprint-completion-verification", "evidence-freshness-decay", "tool-error-triage"]
 tags: ["reliability", "verification", "silent-failure", "task-completion", "evidence", "deployment", "testing"]
 ---
@@ -42,7 +42,7 @@ The evidence type must match the task type:
 | Deploy | HTTP GET of a live URL returns expected content/status; or `node fetch`/curl against the specific endpoint, not a browser (browser disk-cache can serve stale content for minutes post-merge) |
 | Process start | Process listed in `ps`/status output AND responds to a health probe (`curl http://localhost:PORT/health`) |
 | Test run | Exit code + summary line confirms pass count; not just "tests ran" or absence of visible errors; use `test:coverage` variant where available to surface unhandled rejections |
-| GitHub merge | `mergeable_state === "clean"` before merge; `grep` for a key change in `dist/` after the build completes |
+| GitHub merge | **Pre-merge**: `mergeable_state === "clean"` before calling merge. **Post-merge**: `grep` for a key change in `dist/` after the CI build completes, confirming the patch compiled into the running artifact |
 | Config change (`npm install`, `pip install`) | Re-run the dependent command (e.g., import the installed package) and confirm no install-time or import-time error |
 | File/memory write | Read back the written value and compare |
 
@@ -61,8 +61,8 @@ The evidence type must match the task type:
 ```
 After [operation X], verify it succeeded by [specific check using an independent channel].
 Do not proceed to [next step] until [observable evidence] confirms success.
-If verification fails, treat it as a hard failure — do not retry the original operation
-until you understand why the verification failed.
+If verification fails, determine whether the cause is a real failure or an expected lag before
+deciding whether to wait and re-verify or treat it as a hard failure.
 ```
 
 **Anti-patterns to avoid:**
