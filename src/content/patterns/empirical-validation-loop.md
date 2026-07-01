@@ -3,7 +3,7 @@ title: "Empirical Validation Loop"
 category: "feedback-loops"
 evidenceLevel: "strong"
 summary: "Agents and their prompts are software — they should be tested like software. A/B test prompt variants across real agent runs, measure outcome differences with concrete metrics, and graduate findings into pattern evidence. Without this loop, prompt design is guesswork that accumulates tech debt in the form of untested assumptions."
-relatedPatterns: ["proactivity-injection", "prompt-diversity-over-model-diversity", "sprint-continuity", "observer-actor-separation", "deploy-lag-verification", "convergence-stall-detection"]
+relatedPatterns: ["proactivity-injection", "prompt-diversity-over-model-diversity", "sprint-continuity", "observer-actor-separation", "deploy-lag-verification", "convergence-stall-detection", "tool-error-triage"]
 tags: ["experimentation", "a-b-testing", "measurement", "prompt-design", "evidence", "iteration", "validation"]
 ---
 
