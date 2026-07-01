@@ -62,7 +62,7 @@ Classify before retrying. Don't wait for a pattern to emerge across retries.
 
 **Semantic indicators**: the call *succeeds* (HTTP 200) but returns a shape that contradicts a *known domain invariant* — e.g., a CI check count that the agent just verified is non-zero now reports 0, a list the agent knows is non-empty is empty. Only flag as semantic when you have a corroborating read confirming the expectation; don't classify legitimate empty state as a programming error.
 
-**Authentication failures**: treat as permanent by default — an isolated auth failure on a single tool most likely means wrong scope or expired credentials. However, a *single agent* seeing repeated auth failures within a short window (e.g., 3 failures in under 2 minutes, across different tools or calls) is an observable signal that may indicate transient infrastructure rather than a credential problem. In that case, apply one retry with extended backoff (15s) before escalating. Treat as transient/external (max 2 retries) when retrying. The autogent #728/#730 thread documents this pattern: what appeared to be credential failures were a transient infra outage.
+**Authentication failures**: treat as permanent by default — an isolated auth failure on a single tool most likely means wrong scope or expired credentials. However, a *single agent* seeing repeated auth failures within a short window (e.g., 3 failures in under 2 minutes, across different tools or calls that do NOT share the same token) is an observable signal that may indicate transient infrastructure rather than a credential problem. Important: if multiple tools share one token, repeated failures across them may still reflect a single bad credential — check whether the failures are on *independently-authenticated* calls before applying transient logic. Apply one retry with extended backoff (15s) before escalating, then treat as transient/external (max 2 retries) when retrying.
 
 **Ambiguous (500)**: Could be transient or permanent. Apply transient/external backoff (max 2 retries at 15s and 45s). If still failing after 2 retries, escalate — the upstream may have a sustained outage, but the ceiling prevents infinite spin.
 
@@ -74,16 +74,19 @@ on tool_error(e):
 
   if classification.is_transient:
     if retry_count < MAX_RETRIES[classification.domain]:
-      wait(backoff(retry_count))
-      # For idempotent writes: re-read state first to confirm the operation
-      # didn't already commit before the timeout. Non-idempotent writes without
-      # a stable lookup key (no way to confirm duplication) should NOT be
-      # retried automatically — escalate instead to avoid duplicate side effects.
+      delay = backoff(retry_count, domain=classification.domain)
+      delay = jitter(delay, factor=0.25)  # ±25% to avoid synchronized retries
+      wait(delay)
+      # For write operations: guard against timeout-after-commit.
       if is_write_operation(e):
         if is_idempotent_or_has_lookup_key(e):
-          confirm_not_already_applied()  # e.g., re-fetch the resource
+          already_applied = confirm_not_already_applied()  # e.g., re-fetch resource
+          if already_applied:
+            return  # success — the write went through before timeout
         else:
-          escalate("Non-idempotent write timed out — cannot safely retry without risk of duplication")
+          # Non-idempotent write with no lookup key: retrying risks duplication
+          escalate("Non-idempotent write timed out — cannot safely retry")
+          return
       retry()
     else:
       escalate("Transient error not resolved after {MAX_RETRIES} retries: {e}")
@@ -94,7 +97,9 @@ on tool_error(e):
 
   else:  # ambiguous (500)
     if retry_count < 2:
-      wait(backoff(retry_count, domain="external"))  # use external delay: 15s, 45s
+      delay = backoff(retry_count, domain="external")  # 15s, 45s
+      delay = jitter(delay, factor=0.25)
+      wait(delay)
       retry()
     else:
       escalate("Repeated ambiguous error after 2 retries: {e}")
@@ -112,6 +117,8 @@ on tool_error(e):
 | Give up | Log + escalate | Log + escalate |
 
 Backoff delays are floors, not targets. If the error message includes a `Retry-After` header or explicit wait time, honor it instead.
+
+**Semantic indicators and eventual consistency**: a 200 response returning unexpected shape is *usually* a programming error in the call itself, but a recently-written resource can also return stale data during a read-after-write window. Before classifying as semantic/permanent, confirm by waiting a few seconds and re-reading. If the shape normalizes, it was transient read lag, not a semantic bug.
 
 ### Escalation vs alternative approach
 
