@@ -1,8 +1,8 @@
 ---
 title: "Scope Boundary Declaration"
 category: "task-design"
-evidenceLevel: "strong"
-summary: "Agents frequently expand their work surface beyond what was requested — fixing 'related' issues, refactoring nearby code, or shipping undocumented features. At task intake, explicitly declare what is and is not in scope. Enforce those boundaries throughout execution. Every out-of-scope discovery gets noted — not fixed."
+evidenceLevel: "moderate"
+summary: "Emit an explicit IN/OUT scope declaration before making any changes, then enforce it throughout execution by noting out-of-scope discoveries rather than fixing them"
 relatedPatterns: ["long-horizon-task-phasing", "bounded-autonomy", "uncertainty-gated-irreversible-action", "pre-commit-planning-phase"]
 tags: ["scope", "task-design", "boundaries", "blast-radius", "yagni", "pr-hygiene", "no-unused-surface", "task-intake"]
 ---
