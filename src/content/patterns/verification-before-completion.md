@@ -39,22 +39,22 @@ The evidence type must match the task type:
 
 | Task type | Minimum verification |
 |---|---|
-| Deploy | `node fetch`/curl to the specific endpoint (not a browser — disk-cache serves stale content for minutes post-merge). For static-HTML sites, HTTP 200 alone is insufficient: `index.html` can look correct while chunk loading or hydration is broken (see factor-dashboard #115 in Evidence). Also run a browser render check — confirm visible content rendered and zero failed resource loads — for any JS-heavy frontend |
+| Deploy | `node fetch`/curl first (bypasses browser disk-cache which can serve stale content for 1–2+ minutes post-merge). HTTP 200 alone is insufficient for JS-heavy frontends: `index.html` can look correct while chunk loading or hydration is broken. After confirming the CDN has propagated (typically 2–3 minutes), also run a browser render check — confirm visible content rendered and zero failed resource loads. Do not run the browser check within the first 2 minutes of a merge or it may reflect cached pre-deploy state |
 | Process start | Process listed in `ps`/status output AND responds to a health probe (`curl http://localhost:PORT/health`) |
 | Test run | Exit code + summary line confirms pass count; not just "tests ran" or absence of visible errors; use `test:coverage` variant where available to surface unhandled rejections |
-| GitHub merge | **Pre-merge**: `mergeable_state === "clean"` via `method=get` (not `get_status` — see anti-patterns). Note: `"clean"` requires branch-protection rules to be configured; in repos without protection rules, use CI check results directly. **Post-merge**: `grep` for a key change in `dist/` confirms the patch compiled into the artifact — combine with a process restart check ([Deploy-Lag Verification](/agent-prompt-patterns/patterns/deploy-lag-verification)) to confirm the live system is serving it |
+| GitHub merge | **Pre-merge**: query `mergeable_state` via `method=get`. GitHub can return `null` or `"unknown"` during mergeability recomputation — poll until a definitive state (`"clean"`, `"dirty"`, `"blocked"`) appears; only `"clean"` is safe to merge. Note: `"clean"` requires branch-protection rules; in unprotected repos, verify CI check results directly. **Post-merge**: `grep` for a key change in compiled `dist/` confirms the patch compiled into the artifact (applies to repos with local build artifacts; CI-only pipelines should verify the deployed endpoint directly). Combine with a process restart check ([Deploy-Lag Verification](/agent-prompt-patterns/patterns/deploy-lag-verification)) to confirm the live system is serving the new artifact |
 | Config change (`npm install`, `pip install`) | Re-run the dependent command (e.g., import the installed package) and confirm no install-time or import-time error |
 | File/memory write | Read back the written value and compare |
 
 **Require verification to use an independent channel.** The verification step must not share the failure mode with the action it verifies:
 
 - Don't verify a `send_file` call by calling `send_file` again — check the recipient's inbox
-- Don't verify a `git push` by re-running `git push` — run `git log origin/branch --oneline -1` and confirm the expected SHA appears
+- Don't verify a `git push` by re-running `git push` — run `git fetch origin && git log origin/branch --oneline -1` to refresh the remote-tracking ref, then confirm the expected SHA appears
 - Don't verify a deploy by re-calling the deploy tool — make an HTTP request to the live URL
 
 **Distinguish CI-equivalent from developer-mode execution.** Some verification paths hide failures that would surface in production:
 - `npm test` vs `npm run test:coverage` — coverage mode surfaces unhandled rejections; plain test often doesn't
-- `get_status` GitHub API vs `mergeable_state` check — `get_status` returns "0 checks / pending" before CI starts, falsely appearing green; `mergeable_state === "clean"` requires CI to actually pass
+- `get_status` GitHub API vs `mergeable_state` check — `get_status` returns "0 checks / pending" before CI starts, falsely appearing green; `mergeable_state === "clean"` requires CI to actually pass, but can return `null`/`"unknown"` transiently during recomputation — poll until a definitive state appears before acting
 
 **Prompt template for tasks with observable side-effects:**
 
@@ -105,3 +105,4 @@ Multiple incidents in an autonomous multi-agent production system provide direct
 - **[Sprint Completion Verification](/agent-prompt-patterns/patterns/sprint-completion-verification)** — applies this pattern to sprint-agent completion claims specifically: prose summaries describe intent, not confirmed state; always verify artifact state via structured API queries before acknowledging completion
 - **[Evidence Freshness Decay](/agent-prompt-patterns/patterns/evidence-freshness-decay)** — verification evidence has a shelf life; a health check that passed 10 minutes ago is weaker evidence than one that passed 10 seconds ago; plan verification timing accordingly
 - **[Tool Error Triage](/agent-prompt-patterns/patterns/tool-error-triage)** — when verification fails, the failure itself must be triaged before retrying the original operation; a failed health check may mean the deploy failed OR the health endpoint is temporarily unavailable
+- **[Context Window Budgeting](/agent-prompt-patterns/patterns/context-window-budgeting)** — verification steps consume tool-call budget; budget-constrained sessions must prioritize verification for high-stakes operations and skip it for low-stakes idempotent reads
