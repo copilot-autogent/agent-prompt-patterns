@@ -57,7 +57,7 @@ IN:  [list of files, modules, behaviors, or systems this change will touch]
 OUT: [explicit exclusions — what I am NOT changing, even if related or obviously improvable]
 ```
 
-This declaration goes in the PR body, plan file, or task preamble. It is written before implementation begins and before any exploratory file reads turn into edits.
+This declaration goes in the PR body, plan file, or task preamble — whichever exists at intake. If no PR is open yet, write it in the plan file or task notes before any edits begin. When a PR is opened, move or copy the declaration into the PR body so reviewers can verify containment.
 
 **Scope declaration examples:**
 
@@ -84,10 +84,10 @@ Every action taken after the scope declaration should be checked against it. Bef
 
 If the answer is no:
 
-1. Record the discovery in the PR body or a new GitHub issue — do NOT touch the out-of-scope file.
+1. Record the discovery in the PR body, plan file, or a new GitHub issue — do NOT touch the out-of-scope file.
 2. Continue with the in-scope work.
 
-Recording the discovery in the PR body is preferred: it is visible to reviewers without modifying any file, requires no additional permissions, and keeps the context in the change under review. Filing a separate issue is appropriate when the discovery is significant enough to track as independent work.
+Recording in the PR body is preferred when a PR is open: it is visible to reviewers without modifying any file. Before a PR exists, record in the plan file or task notes. Filing a separate issue is appropriate when the discovery is significant enough to track as independent work.
 
 The note or filed issue is the full response to an out-of-scope discovery. It does not warrant expanding the PR.
 
@@ -111,7 +111,7 @@ The PR body should include the scope block. Reviewers can use it to verify compl
 IN:  src/invoice/date-parser.ts
 OUT: src/utils/date.ts, src/invoice/formatter.ts
 
-Part of #75
+Part of #NNN
 ```
 
 A reviewer who spots an edit outside the IN list and not in the OUT exclusions has found either an accidental change or an undocumented boundary crossing — both worth flagging.
