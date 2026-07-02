@@ -101,12 +101,18 @@ const evidenceLabel = (level: string) => ({
 </Base>
 
 <script>
-  import { castVote, getUserVote } from '../../scripts/votes.ts';
+  import { castVote, getUserVote, mergeWithLocalVotes } from '../../scripts/votes.ts';
   import seedVotesRaw from '../../data/votes.json';
 
   type VoteStore = Record<string, { up: number; down: number }>;
 
+  let voteController: AbortController | null = null;
+
   function initVoteWidget() {
+    voteController?.abort();
+    voteController = new AbortController();
+    const { signal } = voteController;
+
     const widget = document.getElementById('vote-widget');
     if (!widget) return;
 
@@ -135,27 +141,21 @@ const evidenceLabel = (level: string) => ({
       }
     }
 
-    // Initial state from localStorage
+    // Merge seed with local localStorage deltas using the shared helper
+    const merged = mergeWithLocalVotes(seedVotesRaw as VoteStore);
     const initial = getUserVote(patternId);
-    // Merge localStorage delta into displayed counts
-    try {
-      const raw = localStorage.getItem('app_votes');
-      const store = raw ? JSON.parse(raw) : {};
-      const delta = store[patternId] ?? { up: 0, down: 0 };
-      refresh(seedV.up + delta.up, seedV.down + delta.down, initial);
-    } catch {
-      refresh(seedV.up, seedV.down, initial);
-    }
+    const mv = merged[patternId] ?? seedV;
+    refresh(mv.up, mv.down, initial);
 
     upBtn.addEventListener('click', () => {
       const { votes, userVote } = castVote(patternId, 'up', seedV);
       refresh(votes.up, votes.down, userVote);
-    });
+    }, { signal });
 
     downBtn.addEventListener('click', () => {
       const { votes, userVote } = castVote(patternId, 'down', seedV);
       refresh(votes.up, votes.down, userVote);
-    });
+    }, { signal });
   }
 
   document.addEventListener('astro:page-load', initVoteWidget);

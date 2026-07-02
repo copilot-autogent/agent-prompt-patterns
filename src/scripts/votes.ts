@@ -29,12 +29,18 @@ export function mergeWithLocalVotes(seed: VoteStore): VoteStore {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return seed;
-    const local: VoteStore = JSON.parse(raw);
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return seed;
+    const local = parsed as Record<string, unknown>;
     const merged: VoteStore = { ...seed };
     for (const [id, counts] of Object.entries(local)) {
+      if (typeof counts !== 'object' || counts === null) continue;
+      const c = counts as Record<string, unknown>;
+      const up = typeof c.up === 'number' && isFinite(c.up) ? Math.max(0, c.up) : 0;
+      const down = typeof c.down === 'number' && isFinite(c.down) ? Math.max(0, c.down) : 0;
       merged[id] = {
-        up: (merged[id]?.up ?? 0) + (counts.up ?? 0),
-        down: (merged[id]?.down ?? 0) + (counts.down ?? 0),
+        up: (merged[id]?.up ?? 0) + up,
+        down: (merged[id]?.down ?? 0) + down,
       };
     }
     return merged;
@@ -98,8 +104,18 @@ export function castVote(
 function getLocalDelta(patternId: string): PatternVotes {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    const store: VoteStore = raw ? JSON.parse(raw) : {};
-    return store[patternId] ?? { up: 0, down: 0 };
+    const parsed: unknown = raw ? JSON.parse(raw) : {};
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      return { up: 0, down: 0 };
+    }
+    const store = parsed as Record<string, unknown>;
+    const entry = store[patternId];
+    if (typeof entry !== 'object' || entry === null) return { up: 0, down: 0 };
+    const e = entry as Record<string, unknown>;
+    return {
+      up: typeof e.up === 'number' && isFinite(e.up) ? Math.max(0, e.up) : 0,
+      down: typeof e.down === 'number' && isFinite(e.down) ? Math.max(0, e.down) : 0,
+    };
   } catch {
     return { up: 0, down: 0 };
   }

@@ -64,7 +64,7 @@ const leaderboard = allPatterns
           >
             <span class={`leaderboard-rank rank-${i + 1}`}>#{i + 1}</span>
             <span class="leaderboard-title">{item.title}</span>
-            <span class="leaderboard-score" data-vote-net={item.net}>▲ {item.net}</span>
+            <span class="leaderboard-score">▲ <span data-vote-net={item.net}>{item.net}</span></span>
           </a>
         ))}
       </div>
