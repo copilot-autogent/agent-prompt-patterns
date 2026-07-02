@@ -55,7 +55,7 @@ Even in squash-merge workflows, granular commits serve as checkpoints: if the ag
 | | `"fix lint error in settings handler"` |
 | `"refactor + fix + add test"` | Three separate commits, each with passing tests |
 
-When a worktree contains changes spanning multiple concerns, use selective staging to commit each concern independently: stage only the files belonging to one logical change, commit, then stage the next. This prevents mixed commits even when edits to multiple concerns are already in flight.
+When a worktree contains changes spanning multiple concerns, use selective staging to commit each concern independently: stage only the files belonging to one logical change, commit, then stage the next. When two concerns touch the same file, use hunk-level staging to include only the relevant lines. This prevents mixed commits even when edits to multiple concerns are already in flight.
 
 **Rule 2 — Commit on every stable checkpoint.** A checkpoint is any moment where the working tree is correct and tests pass. Examples:
 - After passing tests for a single module
@@ -67,9 +67,11 @@ The cost of a commit is near zero. The cost of losing a checkpoint is the time t
 
 **Rule 3 — Never accumulate across unrelated concerns.** A database schema change and a UI tweak are separate commits when each can be independently deployed and reverted without breaking the other. The test: *would reverting this commit affect behavior in two domains that could independently be correct or broken?*
 
+Important: *git-level atomicity is not the same as operation-level rollback safety.* Reverting a commit does not undo external state changes — a schema migration that was applied to a live database, or a file written to object storage, persists after the commit is reverted. Commit separation improves code reviewability and git history clarity; it does not substitute for an application-level rollback strategy for irreversible operations.
+
 Caveat: if two changes are tightly coupled — for example, a schema migration that requires an immediate application-layer change to keep the system runnable — they should be committed together as a single atomic unit. Splitting them would create a broken intermediate commit that violates Rule 2 (every commit must be independently runnable). In these cases, use an explicitly backward-compatible migration strategy (e.g., additive schema change first, then migrate reads/writes, then remove old columns) to create naturally splittable commits.
 
-**Rule 4 — Commit before experimenting.** Before trying an approach that may not work, commit the last known-good state. The committed checkpoint is the recovery point: abandon the experiment and restore to clean state (discarding uncommitted tracked changes) without losing validated work.
+**Rule 4 — Commit before experimenting.** Before trying an approach that may not work, commit the last known-good state. The committed checkpoint is the recovery point for tracked file changes: abandon the experiment and restore tracked files to clean state without losing validated work. Note that untracked files, generated artifacts, and external state (databases, caches, feature flags) are not restored by reverting to a git checkpoint — scope this recovery strategy accordingly.
 
 ### Rollback blast radius rule
 
@@ -127,6 +129,7 @@ Avoid: `"wip"`, `"stuff"`, `"various fixes"`, `"implement feature"`. These messa
 - **Over-atomization**: Commits that are too small create noise. A one-line typo fix alongside a one-line style fix are reasonable candidates for a single commit. The test is independent revertability, not pure line count.
 - **False checkpoints**: Committing code that doesn't pass tests in order to "get a checkpoint" creates a commit history that is not bisectable — every commit must be independently runnable. A checkpoint that breaks tests is worse than no checkpoint, because it undermines the bisect guarantee.
 - **Tightly-coupled cross-layer changes**: Not all cross-concern changes can be split without creating broken intermediate commits (see Rule 3 caveat). Use additive migration strategies to create naturally splittable checkpoints rather than forcing a split that would leave the system temporarily broken.
+- **Git atomicity vs. operation atomicity**: A git revert undoes tracked file changes; it does not undo applied migrations, written files, or external service calls. Atomic commits reduce blast radius within the codebase; they do not replace application-level rollback strategies for irreversible operations.
 - **Atomic commits vs. atomic PRs**: This pattern concerns commits within a branch/session. PR-level atomicity (each PR is one independently deployable feature) is a separate concern handled by Scope Boundary Declaration. Both apply; they operate at different granularities.
 - **Squash-merge PR workflows**: In workflows where all branch commits are squashed into one at merge time, commit granularity is invisible in `main`'s history. This is fine — the granularity still serves its in-flight recovery purpose within the branch. The squash-merge is appropriate at the PR boundary; the commit granularity discipline is appropriate during development.
 
