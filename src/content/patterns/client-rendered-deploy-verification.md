@@ -41,11 +41,13 @@ Apply a two-layer verification protocol. Layer 1 is always required and is autho
 
 ### Layer 1 — Cache-bypassing chunk integrity (authoritative)
 
-**Run this first. It is the ground truth for deploy artifact health.**
+**Run this first. Wait ≥ 30s after merge before running Layer 1.** This ensures CDN edges have had time to begin propagating the new build.
 
 ```js
-// Run as: node --input-type=module < check.mjs  (or node check.mjs)
-// Wrap in async IIFE for compatibility with older Node / CJS environments.
+// Save as check.mjs and run as: node check.mjs
+// Requires Node.js 18+ (native fetch). Add `--experimental-fetch` for Node 16.
+import { strict as assert } from 'node:assert';
+
 (async () => {
   const origin = 'https://example.github.io';
   const appPath = '/my-app/'; // set to '/' for root-domain deploys
@@ -68,16 +70,20 @@ Apply a two-layer verification protocol. Layer 1 is always required and is autho
   const chunkRefs = [...html.matchAll(chunkPattern)].map(m => m[0]);
 
   if (chunkRefs.length === 0) {
-    console.warn('WARNING: no chunk references found — verify regex matches your bundler output');
+    throw new Error('No chunk references found — verify regex matches your bundler output. Aborting to prevent false-pass.');
   }
 
+  const failures = [];
   for (const ref of chunkRefs) {
     const chunkRes = await fetch(origin + ref, { method: 'HEAD', cache: 'no-store' });
-    console.log(chunkRes.status, ref);
     // If HEAD is rejected by the CDN (405), fall back to GET with range:
     // const chunkRes = await fetch(origin + ref, { headers: { Range: 'bytes=0-0' }, cache: 'no-store' });
+    console.log(chunkRes.status, ref);
+    if (chunkRes.status !== 200) failures.push(`${chunkRes.status} ${ref}`);
   }
-  // All must be 200 (or 206 for range GETs). Any 404 = real regression, not cache artifact.
+  // Throw on any non-200 so the script exits non-zero for CI/agent detection.
+  if (failures.length > 0) throw new Error(`Layer 1 FAILED — missing chunks:\n${failures.join('\n')}`);
+  console.log('Layer 1 PASS: all', chunkRefs.length, 'chunks returned 200');
 })();
 ```
 
@@ -85,7 +91,7 @@ Apply a two-layer verification protocol. Layer 1 is always required and is autho
 
 | Chunk status | Meaning |
 |---|---|
-| All 200 | Deploy artifact is intact. HTTP layer is correct. |
+| All 200 | Deploy artifact is intact. HTTP layer is correct. (Run ≥ 30s after merge to avoid mixed CDN edge state during early propagation.) |
 | Any 404 | The referenced chunk is missing from the origin. Real regression. |
 
 **Layer 1 scope note:** Layer 1 validates chunks referenced directly in the HTML shell. It does not catch transitive imports loaded dynamically from within those chunks (e.g., code-split routes loaded on navigation). Layer 1 confirms the entry bundle is intact; Layer 2’s browser render covers transitive load failures in practice.
@@ -99,6 +105,13 @@ If a 404 appears and you suspect a stale browser cache artifact rather than a re
 Using Playwright or equivalent:
 
 ```js
+// Requires Playwright installed: npm install playwright
+// `origin` and `url` must be set to your site's origin and full URL.
+import { strict as assert } from 'node:assert';
+// import { chromium } from 'playwright';
+// const browser = await chromium.launch();
+const origin = 'https://example.github.io'; // replace with your site origin
+
 // After >= 90s post-merge delay
 const page = await browser.newPage();
 
@@ -110,21 +123,20 @@ page.on('response', res => { if (res.status() >= 400) failedUrls.add(res.url());
 await page.goto(url, { waitUntil: 'networkidle' });
 
 // Check 1: interactive content rendered (not stuck “Loading…”)
-// Use getByText with exact:true + filter to visible nodes only, to avoid false positives
-// from hidden skeleton/template elements that may permanently contain placeholder text.
-// Adapt the locator to your app's actual loading-state string and selector.
+// Use filter({ visible: true }) to exclude hidden skeleton/template nodes that may
+// permanently contain “Loading…” text. Adapt to your app's actual placeholder string.
 const loadingCount = await page.getByText('Loading…', { exact: true })
-  .locator(':visible').count();
-assert(loadingCount === 0, `${loadingCount} panels still showing "Loading…"`);
+  .filter({ visible: true }).count();
+assert.equal(loadingCount, 0, `${loadingCount} panels still showing "Loading…"`);
 
 // Check 2: canvas or content elements present
 const contentCount = await page.locator('canvas, .panel-content').count();
-assert(contentCount > 0, 'No rendered content found');
+assert.ok(contentCount > 0, 'No rendered content found');
 
-// Check 3: no failed resource loads (captured above, including initial navigation)
-// Note: filter to first-party URLs to avoid noise from analytics/third-party requests.
+// Check 3: no failed first-party resource loads (captured above, including initial navigation)
+// Filter to first-party URLs to avoid noise from analytics/third-party requests.
 const firstPartyFailed = [...failedUrls].filter(u => u.startsWith(origin));
-assert(firstPartyFailed.length === 0, `Failed resources: ${firstPartyFailed.join(', ')}`);
+assert.equal(firstPartyFailed.length, 0, `Failed resources: ${firstPartyFailed.join(', ')}`);
 ```
 
 **Anti-patterns to avoid:**
@@ -156,18 +168,17 @@ Did Layer 1 chunk-integrity check pass?
 ```
 Verify deploy of [site URL] after merge of [PR #N]:
 
-Layer 1 (authoritative — run first):
-1. node -fetch with ?cb=Date.now() + cache:'no-store' on [site URL]
-2. Extract _app/immutable/*.js chunk refs from returned HTML
-3. HEAD each chunk with cache:'no-store' — all must return 200
-→ If any 404: real regression, stop, investigate pipeline
-→ If all 200: continue to Layer 2
+Layer 1 (authoritative — run ≥ 30s after merge, before browser):
+1. node check.mjs  (cache-bypassing fetch + HEAD each chunk ref from live HTML)
+2. Script throws and exits non-zero on any 404 or empty chunk list
+→ If exit non-zero: real regression, stop, investigate pipeline
+→ If exit 0 with "Layer 1 PASS": continue to Layer 2
 
 Layer 2 (browser render — wait >= 90s post-merge):
 1. Playwright render to networkidle
-2. Assert: zero “Loading…” in rendered DOM
+2. Assert: zero “Loading…” in rendered DOM (visible nodes only)
 3. Assert: content/canvas elements > 0
-4. Assert: zero 404s in network log post-hydration
+4. Assert: zero first-party 404s in network log
 → If 404s appear: cross-reference chunk hashes against current HTML refs
   → Hash not in current HTML = prior-build browser cache artifact (not a regression)
   → Hash in current HTML = real regression
