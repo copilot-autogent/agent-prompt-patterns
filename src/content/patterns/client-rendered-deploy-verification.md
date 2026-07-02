@@ -9,17 +9,17 @@ tags: ["verification", "deployment", "client-rendering", "spa", "astro", "browse
 
 ## Problem
 
-An agent merges a fix to an Astro or SPA site, runs a quick health check, and declares the deploy live. Later, users report that interactive panels are stuck showing "Loading…" — the content never hydrated. Or: the agent runs a browser check within 60 seconds of merge and sees chunk-404 errors, concludes the build is broken, and reopens an incident that was never a regression.
+An agent merges a fix to an Astro or SPA site, runs a quick health check, and declares the deploy live. Later, users report that interactive panels are stuck showing “Loading…” — the content never hydrated. Or: the agent runs a browser check within 60 seconds of merge and sees chunk-404 errors, concludes the build is broken, and reopens an incident that was never a regression.
 
 Two opposite false-signal failure modes coexist in client-rendered deployments:
 
 **False positives from marker-grep and HTTP 200:**
-Static HTML shells for client-rendered sites ship panel markup — including component containers and placeholder text — regardless of whether client-side JavaScript successfully hydrates them. Grepping served HTML for a component title string returns a match even when all 14 interactive panels are stuck "Loading…". An HTTP 200 confirms the origin is reachable, not that JavaScript loaded, executed, and rendered data.
+Static HTML shells for client-rendered sites ship panel markup — including component containers and placeholder text — regardless of whether client-side JavaScript successfully hydrates them. Grepping served HTML for a component title string returns a match even when all 14 interactive panels are stuck “Loading…”. An HTTP 200 confirms the origin is reachable, not that JavaScript loaded, executed, and rendered data.
 
 **False negatives from premature browser verification:**
-CDN propagation for GitHub Pages and similar static hosts takes 60–120 seconds after merge. A browser verification run too soon serves `index.html` from the pre-merge CDN edge. That stale `index.html` references prior-build chunk hashes that no longer exist on the origin — producing chunk-404 errors in the browser's network log. The browser's own HTTP cache can compound this: once it has cached the stale `index.html` (with `max-age`), even "fresh" tabs in the same browser session load the orphan-chunk references for the TTL. The deploy may be perfectly healthy while every browser check screams 404.
+CDN propagation for GitHub Pages and similar static hosts takes 60–120 seconds after merge. A browser verification run too soon serves `index.html` from the pre-merge CDN edge. That stale `index.html` references prior-build chunk hashes that no longer exist on the origin — producing chunk-404 errors in the browser’s network log. The browser’s own HTTP cache can compound this: once it has cached the stale `index.html` (with `max-age`), even “fresh” tabs in the same browser session load the orphan-chunk references for the TTL. The deploy may be perfectly healthy while every browser check screams 404.
 
-Both failure modes share a root cause: they check the wrong layer. The authoritative question is not "does the HTML exist?" or "do chunks 404 in my browser?" — it is "do the chunks referenced by the *current live* HTML all return 200 from a cache-bypassing fetch?"
+Both failure modes share a root cause: they check the wrong layer. The authoritative question is not “does the HTML exist?” or “do chunks 404 in my browser?” — it is “do the chunks referenced by the *current live* HTML all return 200 from a cache-bypassing fetch?”
 
 ## Context
 
@@ -44,20 +44,35 @@ Apply a two-layer verification protocol. Layer 1 is always required and is autho
 **Run this first. It is the ground truth for deploy artifact health.**
 
 ```js
-// node -e or equivalent — no browser, no cache
-const url = 'https://example.github.io/my-app/';
-const html = await fetch(url + '?cb=' + Date.now(), { cache: 'no-store' })
-  .then(r => r.text());
+// Run as: node --input-type=module < check.mjs  (or node check.mjs)
+// Wrap in async IIFE for compatibility with older Node / CJS environments.
+(async () => {
+  const origin = 'https://example.github.io';
+  const appPath = '/my-app/'; // set to '/' for root-domain deploys
 
-// Extract all chunk references (adjust pattern to your bundler's output)
-const chunkRefs = [...html.matchAll(/\/_app\/immutable\/[^\s"']+\.js/g)]
-  .map(m => m[0]);
+  const html = await fetch(origin + appPath + '?cb=' + Date.now(), { cache: 'no-store' })
+    .then(r => r.text());
 
-for (const ref of chunkRefs) {
-  const res = await fetch('https://example.github.io' + ref, { method: 'HEAD', cache: 'no-store' });
-  console.log(res.status, ref);
-}
-// All must be 200. Any 404 here is a real regression, not a cache artifact.
+  // Extract chunk references emitted by the bundler.
+  // Adjust regex for your framework:
+  //   Astro/SvelteKit:  /_app\/immutable\/[^\s"']+\.js
+  //   Next.js:          \/_next\/static\/[^\s"']+\.js
+  //   CRA:              \/static\/js\/[^\s"']+\.chunk\.js
+  const chunkRefs = [...html.matchAll(/\/_app\/immutable\/[^\s"']+\.js/g)]
+    .map(m => m[0]);
+
+  for (const ref of chunkRefs) {
+    // Note: chunks are relative to the origin root, not the app sub-path.
+    // For project sites (e.g. /my-app/), Astro emits chunks at /my-app/_app/...,
+    // so prepend origin + appPath.basePath or just origin if chunks are at root.
+    // Verify against your actual build output.
+    const res = await fetch(origin + ref, { method: 'HEAD', cache: 'no-store' });
+    console.log(res.status, ref);
+    // If HEAD is rejected by the CDN (405), fall back to GET with range:
+    // const res = await fetch(origin + ref, { headers: { Range: 'bytes=0-0' }, cache: 'no-store' });
+  }
+  // All must be 200 (or 206 for range GETs). Any 404 = real regression, not cache artifact.
+})();
 ```
 
 **Interpreting results:**
@@ -66,6 +81,8 @@ for (const ref of chunkRefs) {
 |---|---|
 | All 200 | Deploy artifact is intact. HTTP layer is correct. |
 | Any 404 | The referenced chunk is missing from the origin. Real regression. |
+
+**Layer 1 scope note:** Layer 1 validates chunks referenced directly in the HTML shell. It does not catch transitive imports loaded dynamically from within those chunks (e.g., code-split routes loaded on navigation). Layer 1 confirms the entry bundle is intact; Layer 2’s browser render covers transitive load failures in practice.
 
 If a 404 appears and you suspect a stale browser cache artifact rather than a regression, compare: does the 404 chunk hash appear anywhere in the current HTML (just fetched above) or in the current runtime JS bundles? If it does **not** appear in either → it is a prior-build leftover cached in the browser, not a production regression. Layer 1 already confirmed origin health; the browser error is a local artifact.
 
@@ -78,9 +95,16 @@ Using Playwright or equivalent:
 ```js
 // After >= 90s post-merge delay
 const page = await browser.newPage();
+
+// Register network listeners BEFORE navigation to capture all load-time failures.
+const failed = [];
+page.on('requestfailed', req => failed.push(req.url()));
+page.on('response', res => { if (res.status() >= 400) failed.push(res.url()); });
+
 await page.goto(url, { waitUntil: 'networkidle' });
 
-// Check 1: interactive content rendered (not stuck "Loading…")
+// Check 1: interactive content rendered (not stuck “Loading…”)
+// Note: match the exact string your app renders — U+2026 ellipsis vs three ASCII dots differ.
 const loadingCount = await page.locator('text=Loading…').count();
 assert(loadingCount === 0, `${loadingCount} panels still showing "Loading…"`);
 
@@ -88,20 +112,17 @@ assert(loadingCount === 0, `${loadingCount} panels still showing "Loading…"`);
 const contentCount = await page.locator('canvas, .panel-content').count();
 assert(contentCount > 0, 'No rendered content found');
 
-// Check 3: no 404s in network log post-hydration
-const failed = [];
-page.on('requestfailed', req => failed.push(req.url()));
-page.on('response', res => { if (res.status() >= 400) failed.push(res.url()); });
+// Check 3: no failed resource loads (captured above, including initial navigation)
 assert(failed.length === 0, `Failed resources: ${failed.join(', ')}`);
 ```
 
 **Anti-patterns to avoid:**
 
-- **Marker-grep on served static HTML.** Grep matching a component's title in raw HTML does not confirm hydration. Static HTML ships the markup shell regardless of runtime success.
+- **Marker-grep on served static HTML.** Grep matching a component’s title in raw HTML does not confirm hydration. Static HTML ships the markup shell regardless of runtime success.
 
 - **Running browser verification within 60s of merge.** CDN propagation is not instantaneous. Early browser checks can cache stale chunk references for the full `max-age` TTL, blocking correct verification across all tabs for 10+ minutes.
 
-- **Treating browser chunk-404s as authoritative before running Layer 1.** Always run the cache-bypassing node-fetch check first. Browser errors frequently reflect the browser's own HTTP cache, not origin state. Layer 1 is the authoritative artifact check; browser errors are secondary evidence.
+- **Treating browser chunk-404s as authoritative before running Layer 1.** Always run the cache-bypassing node-fetch check first. Browser errors frequently reflect the browser’s own HTTP cache, not origin state. Layer 1 is the authoritative artifact check; browser errors are secondary evidence.
 
 - **Checking only HTTP status of the HTML page.** A 200 on `index.html` means the CDN edge is reachable. It does not mean the JavaScript bundles for the *current build* exist at the origin.
 
@@ -133,7 +154,7 @@ Layer 1 (authoritative — run first):
 
 Layer 2 (browser render — wait >= 90s post-merge):
 1. Playwright render to networkidle
-2. Assert: zero "Loading…" in rendered DOM
+2. Assert: zero “Loading…” in rendered DOM
 3. Assert: content/canvas elements > 0
 4. Assert: zero 404s in network log post-hydration
 → If 404s appear: cross-reference chunk hashes against current HTML refs
@@ -145,7 +166,7 @@ Do NOT declare deploy confirmed until both layers pass.
 
 ## Evidence
 
-**factor-dashboard #115 (2026-06-30):** A dynamic-import statement was missing the `${base}` path prefix. All 14 interactive panels shipped HTML markup and a "Loading…" placeholder — static HTML marker-grep matched every panel. Browser render revealed all panels stuck "Loading…". The missing `${base}` caused a runtime dynamic-import 404 that marker-grep was structurally incapable of detecting. Panels were silently broken in production for approximately one day before the hydration-level check surfaced the root cause.
+**factor-dashboard #115 (2026-06-30):** A dynamic-import statement was missing the `${base}` path prefix. All 14 interactive panels shipped HTML markup and a “Loading…” placeholder — static HTML marker-grep matched every panel. Browser render revealed all panels stuck “Loading…”. The missing `${base}` caused a runtime dynamic-import 404 that marker-grep was structurally incapable of detecting. Panels were silently broken in production for approximately one day before the hydration-level check surfaced the root cause.
 
 **shogi-srs #186 (2026-06-30):** Browser verification was run approximately 50 seconds after merge. The browser served a stale `index.html` from CDN cache that referenced two prior-build chunk hashes. Those hashes produced 404 errors in the browser network log and triggered three console errors that persisted across new tabs for 90 seconds — consistent with `max-age` TTL. A cache-bypassing `node fetch` chunk-integrity check returned 200 for all current-build chunks. The deploy was healthy; the browser errors were prior-build cache artifacts. Without Layer 1 as the authoritative check, the agent would have incorrectly reopened a resolved incident.
 
@@ -159,11 +180,11 @@ Both incidents are from production agentic CI/CD systems (June 2026). Together t
 
 **When to skip Layer 2:** If the site is entirely server-rendered (content visible in raw HTML), Layer 1 alone is sufficient. Layer 2 is only necessary when JavaScript must execute to produce visible content.
 
-**When to skip this pattern entirely:** Platforms that provide a first-party rollout-complete signal (Vercel `readyState: READY`, Cloudflare Pages deployment-complete webhook, Netlify `state: ready`) can substitute that signal for Layer 1. Still run Layer 2 if hydration correctness matters.
+**When to skip this pattern entirely:** Platforms that provide a first-party rollout-complete signal (Vercel `readyState: READY`, Cloudflare Pages deployment-complete webhook, Netlify `state: ready`) can substitute that signal as an initial deployment-complete check, but that signal does not verify asset-level integrity — bad base paths or broken chunk references can still ship as READY. Still run Layer 1 chunk checks and Layer 2 browser render when hydration correctness matters.
 
 ## Related Patterns
 
 - **[Deploy-Lag Verification](/agent-prompt-patterns/patterns/deploy-lag-verification)** — verifies that a fix has been deployed at all (artifact built from patched commit, process restarted); client-rendered deploy verification is the complementary check for *what the deployed artifact actually renders*, not whether it is the right artifact
 - **[Side-Effect Verification](/agent-prompt-patterns/patterns/side-effect-verification)** — the general principle: verify observable outcomes rather than trusting return values or status codes; this pattern is the client-rendering-specific application
 - **[Empirical Validation Loop](/agent-prompt-patterns/patterns/empirical-validation-loop)** — treat post-deploy observations as measurements requiring the correct instrument; grepping HTML is the wrong instrument for hydration correctness
-- **[Sprint Completion Verification](/agent-prompt-patterns/patterns/sprint-completion-verification)** — after a sprint reports "deploy verified", apply this pattern as the backstop: a sprint summary can over-claim verification using only marker-grep
+- **[Sprint Completion Verification](/agent-prompt-patterns/patterns/sprint-completion-verification)** — after a sprint reports “deploy verified”, apply this pattern as the backstop: a sprint summary can over-claim verification using only marker-grep
