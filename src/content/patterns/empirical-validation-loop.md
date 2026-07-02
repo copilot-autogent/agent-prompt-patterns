@@ -3,13 +3,13 @@ title: "Empirical Validation Loop"
 category: "feedback-loops"
 evidenceLevel: "strong"
 summary: "Agents and their prompts are software — they should be tested like software. A/B test prompt variants across real agent runs, measure outcome differences with concrete metrics, and graduate findings into pattern evidence. Without this loop, prompt design is guesswork that accumulates tech debt in the form of untested assumptions."
-relatedPatterns: ["proactivity-injection", "prompt-diversity-over-model-diversity", "sprint-continuity", "observer-actor-separation", "deploy-lag-verification", "convergence-stall-detection", "tool-error-triage"]
+relatedPatterns: ["proactivity-injection", "prompt-diversity-over-model-diversity", "sprint-continuity", "observer-actor-separation", "deploy-lag-verification", "convergence-stall-detection", "tool-error-triage", "client-rendered-deploy-verification"]
 tags: ["experimentation", "a-b-testing", "measurement", "prompt-design", "evidence", "iteration", "validation"]
 ---
 
 ## Problem
 
-A team improves an agent's prompt based on intuition — adding emphasis ("IMPORTANT"), reordering sections, appending new instructions. The agent seems to behave better. The team ships the change.
+A team improves an agent’s prompt based on intuition — adding emphasis (“IMPORTANT”), reordering sections, appending new instructions. The agent seems to behave better. The team ships the change.
 
 Three months later, nobody knows which part of the prompt is doing what. When the agent misbehaves, nobody can point to why. When a new requirement comes in, the team adds more text and hopes. The prompt has become legacy code: nobody dares touch it, nobody understands it, and it probably has bugs nobody has found yet.
 
@@ -30,15 +30,15 @@ The pattern requires that agents produce outputs that can be compared — either
 
 Structure prompt experimentation as a small, disciplined A/B study:
 
-**1. Fix a single hypothesis.** State what you believe a change will affect and how: "Adding mandatory instructions before the content (Position Over Wording) will increase correct tool-call rate from ~33% to >80%." One hypothesis per experiment — multi-change experiments produce uninterpretable results.
+**1. Fix a single hypothesis.** State what you believe a change will affect and how: “Adding mandatory instructions before the content (Position Over Wording) will increase correct tool-call rate from ~33% to >80%.” One hypothesis per experiment — multi-change experiments produce uninterpretable results.
 
-**2. Design exactly two (or a small fixed set of) variants.** A control (current prompt) and a treatment (single modification). Resist the urge to test "improved overall prompt" — every change beyond the hypothesis variable becomes a confound.
+**2. Design exactly two (or a small fixed set of) variants.** A control (current prompt) and a treatment (single modification). Resist the urge to test “improved overall prompt” — every change beyond the hypothesis variable becomes a confound.
 
-**3. Run N≥3 trials per variant on real tasks.** Synthetic or simulated runs miss failure modes that only appear in production context (rate limits, live API responses, tool call sequencing under real load). The minimum bar for a "conclusion" is 3 trials per variant with consistent direction.
+**3. Run N≥3 trials per variant on real tasks.** Synthetic or simulated runs miss failure modes that only appear in production context (rate limits, live API responses, tool call sequencing under real load). The minimum bar for a “conclusion” is 3 trials per variant with consistent direction.
 
-**4. Measure an observable outcome, not a subjective one.** Good metrics: tool call made (yes/no), correct output format (yes/no), task completion rate, self-rated score on a defined rubric. Poor metrics: "felt better," "seemed more helpful," qualitative impression.
+**4. Measure an observable outcome, not a subjective one.** Good metrics: tool call made (yes/no), correct output format (yes/no), task completion rate, self-rated score on a defined rubric. Poor metrics: “felt better,” “seemed more helpful,” qualitative impression.
 
-**5. Graduate the finding into a reusable pattern.** A finding that lives only in a dev's notes is invisible to the next person who touches the prompt. The moment a hypothesis is confirmed across ≥3 trials, it becomes a pattern candidate: problem, context, solution, evidence table, tradeoffs. This library is the repository for those graduates.
+**5. Graduate the finding into a reusable pattern.** A finding that lives only in a dev’s notes is invisible to the next person who touches the prompt. The moment a hypothesis is confirmed across ≥3 trials, it becomes a pattern candidate: problem, context, solution, evidence table, tradeoffs. This library is the repository for those graduates.
 
 ## Evidence
 
@@ -48,14 +48,14 @@ Six side-project sprint agents each received a different proactivity prompt modi
 
 | Variant | Modification | Week 2 Status | Avg Rating |
 |---------|-------------|---------------|------------|
-| 9a | "Propose 1 post not on the backlog" | STRONG | 3.0 |
+| 9a | “Propose 1 post not on the backlog” | STRONG | 3.0 |
 | 9b | First-time-visitor user persona | STRONG | 2.7 |
 | 9c | Discoverability self-audit | MODERATE | 2.3 |
 | 9d | Data-driven initiative trigger | STRONG | 3.0 |
 | 9e | Target-user persona (30-second task) | STRONG | 3.0 |
 | 9f | Novel pattern proposal prompt | STRONG | 3.0 |
 
-By week 2, all 6 variants were producing novel proposals (5/6 STRONG). The study identified that persona framing (9b, 9e) produced the highest-fidelity matches between prompt intent and agent output — the agent's proposed change directly mirrored the persona's described frustration. This finding became the Persona Empathy Probe backlog item.
+By week 2, all 6 variants were producing novel proposals (5/6 STRONG). The study identified that persona framing (9b, 9e) produced the highest-fidelity matches between prompt intent and agent output — the agent’s proposed change directly mirrored the persona’s described frustration. This finding became the Persona Empathy Probe backlog item.
 
 Critically: this would not have been discoverable without comparing variants across runs. A single improved sprint producing one novel idea would look like noise.
 
@@ -74,6 +74,6 @@ Both experiments followed the same structure: fixed hypothesis, controlled varia
 
 **Self-rated metrics are gameable:** When agents rate their own outputs, high scores are easier to produce by outputting confidently than by producing genuinely novel work. Calibrate self-rating rubrics with explicit examples of each score level. Use external validators (human review, downstream task success rate) when the stakes are high.
 
-**Small N limits confidence:** 3 trials per variant is the minimum bar for a directional signal, not a statistically rigorous result. Conclusions from N=3 should be labeled "directional" and revisited if the pattern becomes load-bearing. N≥6 per variant is the threshold for strong-evidence designation in this library.
+**Small N limits confidence:** 3 trials per variant is the minimum bar for a directional signal, not a statistically rigorous result. Conclusions from N=3 should be labeled “directional” and revisited if the pattern becomes load-bearing. N≥6 per variant is the threshold for strong-evidence designation in this library.
 
 **Variant discipline erodes over time:** After a study concludes, the temptation is to improve the winning variant before the next study begins. This resets the baseline silently. Each new study should explicitly document what the current control prompt contains and commit it to version control before variants are tested.
