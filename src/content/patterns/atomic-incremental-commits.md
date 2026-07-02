@@ -63,9 +63,11 @@ Even in squash-merge workflows, granular commits serve as checkpoints: if the ag
 
 The cost of a commit is near zero. The cost of losing a checkpoint is the time to reconstruct it.
 
-**Rule 3 — Never accumulate across unrelated concerns.** A database schema change and a UI tweak are separate commits even within the same feature branch. The test: would reverting this commit affect behavior in two domains that could independently be correct or broken?
+**Rule 3 — Never accumulate across unrelated concerns.** A database schema change and a UI tweak are separate commits when each can be independently deployed and reverted without breaking the other. The test: *would reverting this commit affect behavior in two domains that could independently be correct or broken?*
 
-**Rule 4 — Commit before experimenting.** Before trying an approach that may not work, commit the last known-good state. This makes the experiment cost-free to undo: `git reset --hard HEAD` restores to the checkpoint without losing validated work.
+Caveat: if two changes are tightly coupled — for example, a schema migration that requires an immediate application-layer change to keep the system runnable — they should be committed together as a single atomic unit. Splitting them would create a broken intermediate commit that violates Rule 2 (every commit must be independently runnable). In these cases, use an explicitly backward-compatible migration strategy (e.g., additive schema change first, then migrate reads/writes, then remove old columns) to create naturally splittable commits.
+
+**Rule 4 — Commit before experimenting.** Before trying an approach that may not work, commit the last known-good state. The committed checkpoint is the recovery point: abandon the experiment and restore to clean state (discarding uncommitted tracked changes) without losing validated work.
 
 ### Rollback blast radius rule
 
@@ -76,6 +78,7 @@ The cost of a bad commit ≈ lines changed × coupling factor. Keep commits smal
 Deferring a commit is only correct when:
 1. The working tree is in an invalid intermediate state (tests don't pass, code doesn't compile)
 2. The change is genuinely incomplete — a half-wired component that would be misleading as a standalone commit
+3. Two changes are tightly coupled and splitting them would create a broken intermediate commit (see Rule 3 caveat)
 
 In these cases, continue working until the nearest stable checkpoint, then commit. Do not wait for the entire task to be complete.
 
@@ -103,9 +106,9 @@ Avoid: `"wip"`, `"stuff"`, `"various fixes"`, `"implement feature"`. These messa
 
 ## Evidence
 
-**Sprint failure recovery**: In autonomous multi-agent sprint systems, sprints that die mid-flight (auth errors, timeouts, process kills) leave partial work. The recovery path depends entirely on what was committed before the failure. Sprints with granular commits leave a recoverable artifact at the last stable checkpoint. Sprints with a single end-of-sprint commit lose everything if the commit didn't happen before the failure. In a sample of 5 sprint failures on factor-dashboard and shogi-srs, all 5 that had no intermediate commits required full re-runs. Two that had intermediate commits recovered from the last checkpoint without re-running earlier phases.
+**Sprint failure recovery**: In autonomous multi-agent sprint systems, sprints that die mid-flight (auth errors, timeouts, process kills) leave partial work. The recovery path depends entirely on what was committed before the failure. Sprints with granular commits leave a recoverable artifact at the last stable checkpoint. Sprints with a single end-of-sprint commit lose everything if the commit didn't happen before the failure. In a sample of 7 sprint failures on factor-dashboard and shogi-srs, 5 had no intermediate commits and required full re-runs; 2 had intermediate commits and recovered from the last checkpoint without re-running earlier phases.
 
-**Deploy bisection (factor-dashboard, June 2026)**: A regression appeared in production after a sprint that squashed 12 intermediate steps into a single merge commit. The regression was in one of the 12 steps, but no bisection was possible because each step was not individually revertable. Manual code archaeology took 45 minutes to locate the responsible change. Had each step been a separate commit, a bisect run would have found it in under 2 minutes.
+**Deploy bisection (factor-dashboard, June 2026)**: A regression appeared in production after a sprint whose branch history was not preserved — 12 intermediate steps had been squashed before being pushed. The regression was in one of the 12 steps, but no bisection was possible because each step was not individually revertable in the push history. Manual code archaeology took 45 minutes to locate the responsible change. In workflows that preserve branch commit history (merge commits, or non-squash pushes), having each step as a separate commit enables `git bisect` to isolate the regression automatically.
 
 **Autogent workflow grounding**: The autogent workflow explicitly states *"push regularly, no accumulated local commits"* and *"notify user on completion"*. This rule was added after recurring incidents where agents worked for extended sessions without pushing, then lost work when sessions ended before the push completed. Granular incremental commits are the mechanism that makes regular pushing practical — there is always a stable unit to push.
 
@@ -121,6 +124,7 @@ Avoid: `"wip"`, `"stuff"`, `"various fixes"`, `"implement feature"`. These messa
 
 - **Over-atomization**: Commits that are too small create noise. A one-line typo fix alongside a one-line style fix are reasonable candidates for a single commit. The test is independent revertability, not pure line count.
 - **False checkpoints**: Committing code that doesn't pass tests in order to "get a checkpoint" creates a commit history that is not bisectable — every commit must be independently runnable. A checkpoint that breaks tests is worse than no checkpoint, because it undermines the bisect guarantee.
+- **Tightly-coupled cross-layer changes**: Not all cross-concern changes can be split without creating broken intermediate commits (see Rule 3 caveat). Use additive migration strategies to create naturally splittable checkpoints rather than forcing a split that would leave the system temporarily broken.
 - **Atomic commits vs. atomic PRs**: This pattern concerns commits within a branch/session. PR-level atomicity (each PR is one independently deployable feature) is a separate concern handled by Scope Boundary Declaration. Both apply; they operate at different granularities.
 - **Squash-merge PR workflows**: In workflows where all branch commits are squashed into one at merge time, commit granularity is invisible in `main`'s history. This is fine — the granularity still serves its in-flight recovery purpose within the branch. The squash-merge is appropriate at the PR boundary; the commit granularity discipline is appropriate during development.
 
