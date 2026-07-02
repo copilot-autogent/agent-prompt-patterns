@@ -56,8 +56,8 @@ github-search_issues query="is:issue is:open label:status:draft" owner=OWNER rep
 # BAD — directory listing returns full metadata for every file (45KB for large repos)
 github-get_file_contents owner=OWNER repo=REPO path="src/content/patterns"
 
-# GOOD — search for specific files using path and extension qualifiers, scoped to repo
-# (filename: qualifier does not accept globs; use path: + extension: instead)
+# GOOD — filter to recently-modified files matching a specific extension (sampling, not exhaustive)
+# For completeness-critical enumeration, use pagination (Strategy 2) after filtering
 github-search_code query="repo:OWNER/REPO path:src/content/patterns extension:md" perPage=30
 ```
 
@@ -89,11 +89,11 @@ github-list_issues owner=OWNER repo=REPO perPage=100 page=2
 
 **Pagination termination conditions** — use the most reliable signal available:
 
-1. **`result.length < perPage`** — a strong heuristic (last page is typically smaller), but unreliable when the total happens to be an exact multiple of `perPage`; a page returning exactly `perPage` items could be either mid-stream or the final page. Additionally, for mutable resources like issues or pull requests, inserts or state changes between page requests can cause items to shift pages — leading to duplicates or omissions even when all pages are fetched. For completeness-critical tasks on mutable resources, prefer search endpoints with `total_count`.
-2. **`total_count` equals accumulated count** — most reliable; available on GitHub **search** endpoints (`github-search_issues`, `github-search_code`) but **not** on list endpoints (`github-list_issues`, `github-list_commits`) which are REST-based and do not return `total_count`. Note: GitHub search returns a maximum of 1,000 results regardless of `total_count`; if `total_count > 1000`, pagination alone cannot exhaust the full result set — narrow the query further before paginating.
-3. **`pageInfo.hasNextPage: false`** — definitive cursor-based signal when the endpoint exposes it
+1. **`result.length < perPage`** — a strong heuristic (last page is typically smaller), but unreliable when the total happens to be an exact multiple of `perPage`; a page returning exactly `perPage` items could be either mid-stream or the final page.
+2. **`total_count` equals accumulated count** — most reliable; available on GitHub **search** endpoints (`github-search_issues`, `github-search_code`) but **not** on list endpoints (`github-list_issues`, `github-list_commits`) which are REST-based and do not return `total_count`. Note: GitHub search returns a maximum of 1,000 results regardless of `total_count`; if `total_count > 1000`, pagination alone cannot exhaust the full result set — narrow the query further.
+3. **`pageInfo.hasNextPage: false`** — definitive cursor-based signal when the endpoint exposes it.
 
-For REST list endpoints without `total_count`, paginate until `result.length < perPage` AND verify by fetching one more page to confirm it is empty.
+**Mutable-resource caveat:** Page-number pagination on mutable REST resources (issues, pull requests, comments) is inherently racy — inserts, updates, or state changes between page requests can cause items to shift pages, producing duplicates or omissions even when all pages are fetched. For completeness-critical tasks on mutable resources, prefer search endpoints with `total_count` + cursor-based pagination where available. When REST list pagination is unavoidable, treat the accumulated result as a best-effort snapshot, not a guaranteed-complete set.
 
 **Do not** rely on "the response looked complete" as a termination signal. A full page of exactly 30 items always looks complete.
 
@@ -112,9 +112,11 @@ Common truncation signals:
 | `recall_memory` | Output ends mid-sentence or mid-list | Truncated at display limit |
 | `view` (file) | "File truncated at 50KB" notice | Only partial file shown |
 
+**Important:** Strategy 3 *detects* truncation — it does not recover the missing data. When a truncation signal is detected, you must also apply Strategy 1 or 2 to retrieve the complete dataset before acting. Detection alone is not sufficient for completeness-sensitive tasks.
+
 When a truncation signal is detected:
 1. **Do not act on the partial result as if complete**
-2. Switch to a more targeted Strategy 1 query, OR paginate to retrieve remaining items
+2. Switch to a more targeted Strategy 1 query, OR paginate (Strategy 2) to retrieve remaining items
 3. If completeness is not required for the task, explicitly note "acting on partial data: first N items only" before proceeding
 
 ### Strategy 4 — Targeted Post-Processing Extraction
@@ -147,13 +149,13 @@ This strategy trades a small secondary tool call for a large reduction in contex
 
 | Question | Recommended Strategy |
 |----------|---------------------|
-| Can the tool's query parameters constrain the result? | **Strategy 1** (Filter at Source) — always preferred |
+| Can the tool's query parameters constrain the result? | **Strategy 1** (Filter at Source) — always preferred; paginate afterward if completeness is required |
 | Is the result a search endpoint with a `total_count`? | **Strategy 2** with `total_count` termination (check for >1000 cap) |
-| Is the result a REST list endpoint (no `total_count`)? | **Strategy 2** with empty-page confirmation |
-| Did the tool return a suspiciously round number of results? | **Strategy 3** (Detect Truncation) — suspect truncation |
+| Is the result a REST list endpoint (no `total_count`)? | **Strategy 2** with empty-page confirmation (best-effort; see mutable-resource caveat) |
+| Did the tool return a suspiciously round number of results? | **Strategy 3** (Detect Truncation) — then apply Strategy 1 or 2 to recover the missing data |
 | Is the tool output a large blob saved to `/tmp`? | **Strategy 4** (Targeted Extraction) — if filesystem is accessible |
-| Does the task require a complete enumeration? | Apply **Strategy 2** or **3**; sampling is not acceptable |
-| Does the task only need a representative sample? | **Strategy 1** with a reasonable limit is sufficient |
+| Does the task require a complete enumeration? | Apply **Strategy 2** (paginate) + **Strategy 3** (verify no truncation signals remain) |
+| Does the task only need a representative sample? | **Strategy 1** with a reasonable limit is sufficient; note in output that sampling was used |
 
 ## Evidence
 
@@ -161,7 +163,7 @@ This strategy trades a small secondary tool call for a large reduction in contex
 
 **`recall_memory` 60KB topic truncation**: A memory topic tracking the project manifest had grown to ~60KB after 15 weeks of incremental updates. `recall_memory(query="project-agent-prompt-patterns-manifest")` returned a truncated preview. The agent passed `view_range=[1, 40]` on the second call to read the header section specifically, then `view_range=[41, 80]` (non-overlapping) for the manifest body — two targeted reads instead of one truncated large one.
 
-**`github-list_issues` false-negative dedup**: An ideation cron called `github-list_issues` without `perPage` to check for existing issues. The repo had 91 open issues; the API returned 30 (one page, default). The target issue was #67 — it was not in the first 30. The cron concluded "not found" and filed a duplicate. Switching to `github-search_issues` (which returns `total_count`) with `perPage=100` covered all 91 issues in one call and the dedup check worked. Note: `perPage=100` happened to cover all 91 issues; a repo with 150+ open issues would require explicit pagination. Also note: GitHub search is eventually consistent — very recently created issues may not yet be indexed; for time-critical dedup checks within seconds of filing, supplement with a `github-list_issues` page-1 scan of the most recent issues. See [Dedup-Search Before Filing](/agent-prompt-patterns/patterns/dedup-search-before-filing) for the issue-filing-specific treatment.
+**`github-list_issues` false-negative dedup**: An ideation cron called `github-list_issues` without `perPage` to check for existing issues. The repo had 91 open issues; the API returned 30 (one page, default). The target issue was #67 — it was not in the first 30. The cron concluded "not found" and filed a duplicate. Switching to `github-search_issues` (which returns `total_count`) with `perPage=100` covered all 91 issues in one call and the dedup check worked. Note: `perPage=100` happened to cover all 91 issues; a repo with 150+ open issues would require explicit pagination. Also note: GitHub search is eventually consistent — very recently created issues (within seconds) may not yet be indexed; for time-critical dedup of recently filed items, supplement with `github-list_issues perPage=10 page=1` sorted by creation date to catch the newest items. See [Dedup-Search Before Filing](/agent-prompt-patterns/patterns/dedup-search-before-filing) for the issue-filing-specific treatment.
 
 **Round-number truncation signal**: A `grep` call with `head_limit=50` returned exactly 50 matches. The agent recognized 50 as a common truncation boundary and re-ran with `head_limit=200`. The actual match count was 73. Acting on the 50-item result would have missed 23 matches (31% of the real result set).
 
@@ -185,9 +187,11 @@ This strategy trades a small secondary tool call for a large reduction in contex
 
 - **GitHub search 1,000-result cap**: GitHub's search API returns at most 1,000 results regardless of `total_count`. If `total_count > 1000`, pagination cannot retrieve the full dataset — narrow the query before paginating (e.g., add date ranges, label filters, or state filters).
 
-- **GitHub search is eventually consistent**: Newly created issues and commits may not appear in search results immediately. For dedup checks on recently filed issues (within seconds), supplement search with a direct `github-list_issues` or `github-issue_read` call on the specific item, rather than relying solely on search.
+- **GitHub search is eventually consistent**: Newly created issues and commits may not appear in search results immediately. For dedup checks on very recently filed issues (within seconds), supplement search with `github-list_issues page=1 perPage=10` sorted by creation date to catch items not yet indexed.
 
-- **`filename:` search qualifier does not accept globs**: GitHub's `github-search_code filename:` qualifier matches exact filenames, not glob patterns. Use `path:` to restrict to a directory and `extension:` to filter by file type instead of `filename:*.md`. Always include `repo:OWNER/REPO` to scope the search to the intended repository.
+- **`filename:` search qualifier does not accept globs**: GitHub's `github-search_code filename:` qualifier matches exact filenames, not glob patterns. Use `path:` to restrict to a directory and `extension:` to filter by file type. Always include `repo:OWNER/REPO` to scope the search to the intended repository.
+
+- **Strategy 1 filtering is not the same as complete enumeration**: Filtering reduces result size but does not guarantee exhaustive coverage when the filter matches more items than `perPage`. A filtered search that returns exactly `perPage` items may still be truncated. For complete enumeration, combine filtering (Strategy 1) with pagination (Strategy 2) and truncation detection (Strategy 3).
 
 - **Pagination is not free**: For very large result sets (hundreds of items), full pagination is expensive in both API calls and context. Use Strategy 1 (filter at source) to reduce the result set before paginating — paginate a narrow query, not a broad one.
 
