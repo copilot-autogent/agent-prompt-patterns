@@ -173,6 +173,27 @@ const leaderboard = allPatterns
       el.textContent = String(net);
     });
 
+    // ── Re-sort leaderboard by merged net score ──────────
+    const leaderboardList = document.getElementById('leaderboard-list');
+    if (leaderboardList) {
+      const items = Array.from(leaderboardList.querySelectorAll<HTMLElement>('.leaderboard-item'));
+      items.sort((a, b) => {
+        const aId = a.dataset.patternId ?? '';
+        const bId = b.dataset.patternId ?? '';
+        const aNet = merged[aId] ? merged[aId].up - merged[aId].down : 0;
+        const bNet = merged[bId] ? merged[bId].up - merged[bId].down : 0;
+        return bNet - aNet;
+      });
+      items.forEach((item, i) => {
+        const rank = item.querySelector('.leaderboard-rank');
+        if (rank) {
+          rank.className = `leaderboard-rank rank-${i + 1}`;
+          rank.textContent = `#${i + 1}`;
+        }
+        leaderboardList.appendChild(item);
+      });
+    }
+
     // ── Leaderboard toggle ───────────────────────────────
     const toggle = document.getElementById('leaderboard-toggle');
     const list = document.getElementById('leaderboard-list');
