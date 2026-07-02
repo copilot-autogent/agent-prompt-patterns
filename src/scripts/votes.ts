@@ -54,8 +54,10 @@ export function getUserVote(patternId: string): VoteDirection | null {
   try {
     const raw = localStorage.getItem(USER_VOTES_KEY);
     if (!raw) return null;
-    const uv: Record<string, VoteDirection> = JSON.parse(raw);
-    return uv[patternId] ?? null;
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null;
+    const val = (parsed as Record<string, unknown>)[patternId];
+    return val === 'up' || val === 'down' ? val : null;
   } catch {
     return null;
   }
