@@ -1,7 +1,7 @@
 ---
 title: "Memory vs. Session-State Separation"
 category: "memory-management"
-evidenceLevel: "strong"
+evidenceLevel: "moderate"
 summary: "Multi-session agents conflate persistent knowledge storage with transient session logs, causing memory bloat, recall noise, and false continuity. Separate storage by intent: use memory only for synthesized knowledge that cannot be re-derived, use session-store for conversation history and sprint outcomes, and use external repositories for resolved archival records."
 relatedPatterns: ["read-before-write-memory-guard", "strategic-memory-recall", "belief-entropy-checkpointing"]
 tags: ["memory", "session-state", "storage", "recall", "continuity", "pruning", "knowledge-management"]
@@ -36,7 +36,7 @@ The pattern does NOT apply to:
 
 Classify every potential storage write into one of three types before saving, and route to the correct storage system:
 
-**Type A — Persistent Knowledge** (use memory): Information that cannot be re-derived by querying session history or an external repository. Examples: cross-domain synthesis ("distributed systems patterns apply to agent architecture in these ways"), design rationale ("we chose approach X because Y"), user preferences and constraints, project manifests with backlog and open decisions, cross-session patterns ("every time we try X, Y happens").
+**Type A — Persistent Knowledge** (use memory): Information that cannot be re-derived by querying session history or an external repository. Examples: cross-domain synthesis ("distributed systems patterns apply to agent architecture in these ways"), design rationale ("we chose approach X because Y"), project manifests with backlog and open decisions, cross-session patterns ("every time we try X, Y happens"). User preferences may also be stored here, but apply a sensitivity check: avoid storing preferences that include personal or confidential details unless the system has a defined retention and access policy for that data.
 
 **Type B — Transient State** (use session-store): Information that *can* be re-derived from session history. Examples: raw conversation turns, sprint outcomes ("PR #42 merged, 0 HIGH findings"), checkpoint summaries ("completed step 3 of 5"), session compactions ("this session covered topics A, B, C"). This belongs in the session history database — accessible via SQL queries, full-text search, and structured filtering.
 
@@ -50,9 +50,9 @@ Can I re-derive this by querying session history or an external repository?
   NO  → it's synthesized knowledge; save to persistent memory
 ```
 
-For session continuity specifically: agents should query the session-store (e.g., `SELECT turns WHERE session_id = last_session`) rather than relying on memory topics. If the session-store is empty or unavailable, the correct response is to ask the user for context — not to create a memory topic that encodes what was discussed.
+For session continuity specifically: agents should query the session-store rather than relying on memory topics. For example: `SELECT content FROM turns WHERE session_id = (SELECT id FROM sessions ORDER BY created_at DESC LIMIT 1) ORDER BY turn_index DESC LIMIT 20`. If the session-store is empty or unavailable, the correct response is to ask the user for context — not to create a memory topic that encodes what was discussed.
 
-**Pruning heuristic addition**: When reviewing memory for pruning, flag any topic matching the pattern `(log|session|channel|compaction)-\d{4}` or containing primarily session-specific references (PR numbers, sprint IDs, specific dates). These are candidate session logs that drifted into persistent memory.
+**Pruning heuristic addition**: When reviewing memory for pruning, flag any topic whose name or content indicates it is a session narrative rather than synthesized knowledge. Name patterns like `channel-log-*`, `compaction-*`, `session-summary-*`, or any slug containing an ISO date (`-2024-05-13`) are strong signals. Also flag topics containing primarily session-specific references (PR numbers, sprint IDs, specific dates) with no broader analytical claim. These are candidate session logs that drifted into persistent memory.
 
 ## Evidence
 
@@ -78,7 +78,7 @@ After a storage wipe, agents rebuilt continuity by creating persistent memory to
 
 **Session continuity cost**: Accepting that session history lives only in the session-store means agents lose continuity when the session-store is unavailable or empty (e.g., after a wipe). The alternative — storing session summaries in persistent memory — preserves continuity at the cost of recall noise. Teams must decide which failure mode is more tolerable. For most systems, a "please remind me of the context" prompt to the user is preferable to permanent recall degradation.
 
-**Re-derivability judgment**: The decision rule requires the agent to judge whether information "can be re-derived." This judgment is imperfect. Design rationale embedded only in a conversation transcript may technically be re-derivable but practically inaccessible (buried in 500 turns, hard to surface). In ambiguous cases, prefer saving to persistent memory with a note that the source is a specific session, so the memory topic can be reviewed and pruned if the rationale is also captured elsewhere.
+**Re-derivability judgment**: The decision rule requires the agent to judge whether information "can be re-derived." This judgment is imperfect. Design rationale embedded only in a conversation transcript may technically be re-derivable but practically inaccessible (buried in 500 turns, hard to surface). In genuinely ambiguous cases, the preferred resolution is to *extract and synthesize* the rationale into a clearly scoped memory topic (e.g., `project-architecture-decisions`) rather than saving the raw session narrative. The synthesized form should contain only the analytical claim ("we chose X because Y") and a pointer to the source session, not the transcript itself. This keeps the routing rule intact: synthesized knowledge goes to memory, raw transcript stays in the session-store.
 
 **Tooling dependency**: This pattern assumes the session-store is queryable (e.g., FTS5 SQL search). Systems with opaque session histories — where agents cannot query past turns — lose the re-derivability path and may need to use persistent memory more liberally. Investing in a queryable session history store unlocks this pattern fully.
 
