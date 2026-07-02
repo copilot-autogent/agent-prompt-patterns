@@ -10,6 +10,7 @@ const patterns = defineCollection({
       'agent-autonomy',
       'feedback-loops',
       'multi-agent',
+      'memory-management',
     ]),
     slug: z.string().optional(),
     evidenceLevel: z.enum(['strong', 'moderate', 'emerging']),

@@ -63,6 +63,7 @@ Must be one of:
 - `agent-autonomy` — Decision-making and self-directed behavior
 - `feedback-loops` — Learning and memory across sessions
 - `multi-agent` — Coordination and orchestration
+- `memory-management` — Storage topology, recall quality, and memory pruning
 
 ### Evidence Levels
 
