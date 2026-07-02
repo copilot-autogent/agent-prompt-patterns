@@ -1,6 +1,7 @@
 ---
 import { getCollection, render } from 'astro:content';
 import Base from '../../layouts/Base.astro';
+import seedVotes from '../../data/votes.json';
 
 export async function getStaticPaths() {
   const patterns = await getCollection('patterns');
@@ -14,6 +15,10 @@ const { pattern } = Astro.props;
 const { Content } = await render(pattern);
 
 const base = import.meta.env.BASE_URL;
+const patternId = pattern.id.replace(/\.mdx?$/, '');
+const allVotes = seedVotes as Record<string, { up: number; down: number }>;
+const seedV = allVotes[patternId] ?? { up: 0, down: 0 };
+const seedNet = seedV.up - seedV.down;
 
 const categoryLabel = (id: string) => ({
   'prompt-structure': 'Prompt Structure',
@@ -48,6 +53,20 @@ const evidenceLabel = (level: string) => ({
       <h1>{pattern.data.title}</h1>
       <p class="lead">{pattern.data.summary}</p>
 
+      <!-- Vote widget -->
+      <div class="vote-widget" id="vote-widget" data-pattern-id={patternId} data-seed-up={seedV.up} data-seed-down={seedV.down}>
+        <button class="vote-btn" id="vote-up" aria-label="Upvote this pattern">
+          ▲ <span id="up-count">{seedV.up}</span>
+        </button>
+        <button class="vote-btn" id="vote-down" aria-label="Downvote this pattern">
+          ▼ <span id="down-count">{seedV.down}</span>
+        </button>
+        <span class="vote-hint" id="vote-net">
+          net: <strong id="net-count">{seedNet}</strong>
+        </span>
+        <span class="vote-hint" style="margin-left:0.25rem;" id="vote-status"></span>
+      </div>
+
       <div class="pattern-body">
         <Content />
       </div>
@@ -80,3 +99,64 @@ const evidenceLabel = (level: string) => ({
     </div>
   </div>
 </Base>
+
+<script>
+  import { castVote, getUserVote, mergeWithLocalVotes } from '../../scripts/votes.ts';
+  import seedVotesRaw from '../../data/votes.json';
+
+  type VoteStore = Record<string, { up: number; down: number }>;
+
+  let voteController: AbortController | null = null;
+
+  function initVoteWidget() {
+    voteController?.abort();
+    voteController = new AbortController();
+    const { signal } = voteController;
+
+    const widget = document.getElementById('vote-widget');
+    if (!widget) return;
+
+    const patternId = widget.dataset.patternId ?? '';
+    const seedUp = parseInt(widget.dataset.seedUp ?? '0', 10);
+    const seedDown = parseInt(widget.dataset.seedDown ?? '0', 10);
+    const seedV = (seedVotesRaw as VoteStore)[patternId] ?? { up: seedUp, down: seedDown };
+
+    const upBtn = document.getElementById('vote-up') as HTMLButtonElement | null;
+    const downBtn = document.getElementById('vote-down') as HTMLButtonElement | null;
+    const upCount = document.getElementById('up-count');
+    const downCount = document.getElementById('down-count');
+    const netCount = document.getElementById('net-count');
+    const statusEl = document.getElementById('vote-status');
+
+    if (!upBtn || !downBtn) return;
+
+    function refresh(up: number, down: number, userVote: 'up' | 'down' | null) {
+      upBtn!.className = `vote-btn${userVote === 'up' ? ' voted-up' : ''}`;
+      downBtn!.className = `vote-btn${userVote === 'down' ? ' voted-down' : ''}`;
+      if (upCount) upCount.textContent = String(up);
+      if (downCount) downCount.textContent = String(down);
+      if (netCount) netCount.textContent = String(up - down);
+      if (statusEl) {
+        statusEl.textContent = userVote === 'up' ? '— you voted ▲' : userVote === 'down' ? '— you voted ▼' : '';
+      }
+    }
+
+    // Merge seed with local localStorage deltas using the shared helper
+    const merged = mergeWithLocalVotes(seedVotesRaw as VoteStore);
+    const initial = getUserVote(patternId);
+    const mv = merged[patternId] ?? seedV;
+    refresh(mv.up, mv.down, initial);
+
+    upBtn.addEventListener('click', () => {
+      const { votes, userVote } = castVote(patternId, 'up', seedV);
+      refresh(votes.up, votes.down, userVote);
+    }, { signal });
+
+    downBtn.addEventListener('click', () => {
+      const { votes, userVote } = castVote(patternId, 'down', seedV);
+      refresh(votes.up, votes.down, userVote);
+    }, { signal });
+  }
+
+  document.addEventListener('astro:page-load', initVoteWidget);
+</script>

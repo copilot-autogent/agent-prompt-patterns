@@ -1,6 +1,7 @@
 ---
 import { getCollection } from 'astro:content';
 import Base from '../layouts/Base.astro';
+import seedVotes from '../data/votes.json';
 
 const allPatterns = await getCollection('patterns');
 const sorted = allPatterns.sort((a, b) => a.data.title.localeCompare(b.data.title));
@@ -29,12 +30,44 @@ const evidenceIcon = (level: string) => ({
 }[level] ?? '[---]');
 
 const base = import.meta.env.BASE_URL;
+const votes = seedVotes as Record<string, { up: number; down: number }>;
+
+// Build leaderboard: top 10 by seed net score (up - down)
+const leaderboard = allPatterns
+  .map(p => {
+    const id = p.id.replace(/\.mdx?$/, '');
+    const v = votes[id] ?? { up: 0, down: 0 };
+    return { id, title: p.data.title, net: v.up - v.down, up: v.up };
+  })
+  .sort((a, b) => b.net - a.net || b.up - a.up)
+  .slice(0, 10);
 ---
 <Base title="Agent Prompt Patterns">
   <div class="container">
     <div class="hero">
       <h1>Agent Prompt Patterns</h1>
       <p>Empirically-tested patterns for building reliable AI coding agents. Each pattern is backed by real experimental data — not intuition.</p>
+    </div>
+
+    <!-- Leaderboard -->
+    <div class="leaderboard" id="leaderboard">
+      <div class="leaderboard-header">
+        <h2>🏆 Most Effective Patterns</h2>
+        <button class="leaderboard-toggle" id="leaderboard-toggle">hide</button>
+      </div>
+      <div class="leaderboard-list" id="leaderboard-list">
+        {leaderboard.map((item, i) => (
+          <a
+            href={`${base}patterns/${item.id}`}
+            class="leaderboard-item"
+            data-pattern-id={item.id}
+          >
+            <span class={`leaderboard-rank rank-${i + 1}`}>#{i + 1}</span>
+            <span class="leaderboard-title">{item.title}</span>
+            <span class="leaderboard-score">▲ <span data-vote-net={item.net}>{item.net}</span></span>
+          </a>
+        ))}
+      </div>
     </div>
 
     <div class="filter-bar" id="filter-bar">
@@ -49,25 +82,38 @@ const base = import.meta.env.BASE_URL;
     </div>
 
     <div class="pattern-grid" id="pattern-grid">
-      {sorted.map(pattern => (
-        <a
-          href={`${base}patterns/${pattern.id.replace(/\.mdx?$/, '')}`}
-          class="pattern-card"
-          data-category={pattern.data.category}
-          data-tags={pattern.data.tags.join(',')}
-        >
-          <div class="pattern-meta">
-            <span class={`badge badge-${pattern.data.category}`}>
-              {categoryLabel(pattern.data.category)}
-            </span>
-            <span class={`evidence-${pattern.data.evidenceLevel}`} title={`Evidence: ${pattern.data.evidenceLevel}`}>
-              {evidenceIcon(pattern.data.evidenceLevel)}
-            </span>
-          </div>
-          <h3>{pattern.data.title}</h3>
-          <p class="summary">{pattern.data.summary}</p>
-        </a>
-      ))}
+      {sorted.map(pattern => {
+        const id = pattern.id.replace(/\.mdx?$/, '');
+        const v = votes[id] ?? { up: 0, down: 0 };
+        const net = v.up - v.down;
+        return (
+          <a
+            href={`${base}patterns/${id}`}
+            class="pattern-card"
+            data-category={pattern.data.category}
+            data-tags={pattern.data.tags.join(',')}
+            data-pattern-id={id}
+          >
+            <div class="pattern-meta">
+              <span class={`badge badge-${pattern.data.category}`}>
+                {categoryLabel(pattern.data.category)}
+              </span>
+              <span class={`evidence-${pattern.data.evidenceLevel}`} title={`Evidence: ${pattern.data.evidenceLevel}`}>
+                {evidenceIcon(pattern.data.evidenceLevel)}
+              </span>
+            </div>
+            <h3>{pattern.data.title}</h3>
+            <p class="summary">{pattern.data.summary}</p>
+            <div class="card-footer">
+              <span class="vote-score" data-pattern-id={id} data-seed-net={net}>
+                <span>▲</span>
+                <span class="score-num" data-vote-net={net}>{net}</span>
+                <span style="opacity:0.5">votes</span>
+              </span>
+            </div>
+          </a>
+        );
+      })}
     </div>
 
     <p style="color:var(--text-muted);font-size:0.85rem;margin-top:2rem;">
@@ -77,16 +123,19 @@ const base = import.meta.env.BASE_URL;
 </Base>
 
 <script>
-  // Astro compiles this as type="module" (deferred). DOM is ready when module scripts run.
-  // astro:page-load fires on initial load AND every client-side navigation (View Transitions).
+  import { mergeWithLocalVotes } from '../scripts/votes.ts';
+  import seedVotesRaw from '../data/votes.json';
+
+  type VoteStore = Record<string, { up: number; down: number }>;
+
   let controller: AbortController | null = null;
 
-  function initializeFilter() {
-    // Abort any listeners from a previous navigation to prevent handler stacking
+  function initializePage() {
     controller?.abort();
     controller = new AbortController();
     const { signal } = controller;
 
+    // ── Category filter ──────────────────────────────────
     const buttons = document.querySelectorAll<HTMLButtonElement>('.filter-btn');
     const cards = document.querySelectorAll<HTMLElement>('.pattern-card');
 
@@ -101,24 +150,60 @@ const base = import.meta.env.BASE_URL;
       });
     }
 
-    // Handle ?tag= URL param on load
     const params = new URLSearchParams(window.location.search);
     const tagParam = params.get('tag');
-    if (tagParam) {
-      applyFilter('all', tagParam);
-    }
+    if (tagParam) applyFilter('all', tagParam);
 
     buttons.forEach(btn => {
       btn.addEventListener('click', () => {
-        // Clear tag param from URL when using category buttons
         const url = new URL(window.location.href);
         url.searchParams.delete('tag');
         history.replaceState({}, '', url);
         applyFilter(btn.dataset.category ?? 'all');
       }, { signal });
     });
+
+    // ── Vote counts: merge localStorage on top of seed ──
+    const merged = mergeWithLocalVotes(seedVotesRaw as VoteStore);
+
+    document.querySelectorAll<HTMLElement>('[data-vote-net]').forEach(el => {
+      const patternId = el.closest('[data-pattern-id]')?.getAttribute('data-pattern-id');
+      if (!patternId || !merged[patternId]) return;
+      const net = merged[patternId].up - merged[patternId].down;
+      el.textContent = String(net);
+    });
+
+    // ── Re-sort leaderboard by merged net score ──────────
+    const leaderboardList = document.getElementById('leaderboard-list');
+    if (leaderboardList) {
+      const items = Array.from(leaderboardList.querySelectorAll<HTMLElement>('.leaderboard-item'));
+      items.sort((a, b) => {
+        const aId = a.dataset.patternId ?? '';
+        const bId = b.dataset.patternId ?? '';
+        const aNet = merged[aId] ? merged[aId].up - merged[aId].down : 0;
+        const bNet = merged[bId] ? merged[bId].up - merged[bId].down : 0;
+        return bNet - aNet;
+      });
+      items.forEach((item, i) => {
+        const rank = item.querySelector('.leaderboard-rank');
+        if (rank) {
+          rank.className = `leaderboard-rank rank-${i + 1}`;
+          rank.textContent = `#${i + 1}`;
+        }
+        leaderboardList.appendChild(item);
+      });
+    }
+
+    // ── Leaderboard toggle ───────────────────────────────
+    const toggle = document.getElementById('leaderboard-toggle');
+    const list = document.getElementById('leaderboard-list');
+    toggle?.addEventListener('click', () => {
+      if (!list) return;
+      const hidden = list.style.display === 'none';
+      list.style.display = hidden ? '' : 'none';
+      toggle.textContent = hidden ? 'hide' : 'show';
+    }, { signal });
   }
 
-  // Rely solely on astro:page-load — it fires on initial load AND every subsequent navigation
-  document.addEventListener('astro:page-load', initializeFilter);
+  document.addEventListener('astro:page-load', initializePage);
 </script>
