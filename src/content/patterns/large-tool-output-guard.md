@@ -56,8 +56,8 @@ github-search_issues query="is:issue is:open label:status:draft" owner=OWNER rep
 # BAD — directory listing returns full metadata for every file (45KB for large repos)
 github-get_file_contents owner=OWNER repo=REPO path="src/content/patterns"
 
-# GOOD — search for specific files matching a naming pattern
-github-search_code query="filename:*.md path:src/content/patterns" perPage=30
+# GOOD — search for specific files using path and extension qualifiers (no glob in filename:)
+github-search_code query="path:src/content/patterns extension:md" perPage=30
 ```
 
 **For `grep`:** use the most specific pattern possible; set `head_limit` to a number you're confident covers the expected match count, and verify the actual count isn't suspiciously round (30, 50, 100 — common truncation boundaries).
@@ -66,10 +66,10 @@ github-search_code query="filename:*.md path:src/content/patterns" perPage=30
 
 ```
 # BAD — returns full topic; preview truncated at system limit
-recall_memory(query="project manifest", include_patches=false)
+recall_memory query="project manifest" include_patches=false
 
-# GOOD — read the specific section (first 80 lines are always the header)
-recall_memory(query="project manifest", view_range=[1, 80], include_patches=false)
+# GOOD — read the specific section (first 80 lines cover most headers)
+recall_memory query="project manifest" view_range=[1, 80] include_patches=false
 ```
 
 ### Strategy 2 — Paginate Explicitly
@@ -80,17 +80,19 @@ For multi-page resources, iterate pages and accumulate results. Never assume one
 # Step 1: request first page with an explicit page size
 github-list_issues owner=OWNER repo=REPO perPage=100 page=1
 
-# Step 2: inspect the response total_count (or check if result count < perPage)
-# If result count == perPage, there may be more — fetch page 2
+# Step 2: check if result count == perPage — if so, there may be more
 github-list_issues owner=OWNER repo=REPO perPage=100 page=2
 
-# Repeat until result count < perPage (signals last page)
+# Repeat until result count < perPage OR a definitive termination signal is found
 ```
 
-**Pagination termination condition:** stop when:
-- `result.length < perPage` (last page, fewer items than requested)
-- The tool exposes a `total_count` and accumulated items equals it
-- The tool returns a `pageInfo.hasNextPage: false` cursor signal
+**Pagination termination conditions** — use the most reliable signal available:
+
+1. **`result.length < perPage`** — a strong heuristic (last page is typically smaller), but unreliable when the total happens to be an exact multiple of `perPage`; a page returning exactly `perPage` items could be either mid-stream or the final page
+2. **`total_count` equals accumulated count** — most reliable; available on GitHub **search** endpoints (`github-search_issues`, `github-search_code`) but **not** on list endpoints (`github-list_issues`, `github-list_commits`) which are REST-based and do not return `total_count`
+3. **`pageInfo.hasNextPage: false`** — definitive cursor-based signal when the endpoint exposes it
+
+For REST list endpoints without `total_count`, paginate until `result.length < perPage` AND verify by fetching one more page to confirm it is empty.
 
 **Do not** rely on "the response looked complete" as a termination signal. A full page of exactly 30 items always looks complete.
 
@@ -102,8 +104,8 @@ Common truncation signals:
 
 | Tool | Signal | Meaning |
 |------|--------|---------|
-| `github-list_issues` | `result.length == perPage` | May be more pages |
-| `github-search_*` | `total_count > result.length` | Results were cut |
+| `github-list_issues` | `result.length == perPage` | Possible truncation (heuristic — see Strategy 2 notes on exact multiples) |
+| `github-search_*` | `total_count > result.length` | Definitive — results were cut; paginate or narrow the query |
 | `grep` | Matches count == `head_limit` | Limit reached, more may exist |
 | `github-get_file_contents` (directory) | Tool output message starts with "Output too large" | Saved to `/tmp`, not in context |
 | `recall_memory` | Output ends mid-sentence or mid-list | Truncated at display limit |
@@ -118,20 +120,24 @@ When a truncation signal is detected:
 
 After a large-output call that cannot be filtered or paginated (e.g., a tool that returns a large JSON blob with no filter parameters), use a secondary extraction step to pull only the needed fields before reasoning over the data.
 
+**Prerequisite:** This strategy applies when the tool saves output to a `/tmp` file and the truncation notice provides the exact path. The path is ephemeral and changes on each call — always read the path from the truncation notice rather than hardcoding it. Strategy 4 is not available in environments where the agent cannot access the tool host's filesystem.
+
 ```bash
-# After github-get_file_contents on a directory saves 45KB to /tmp/output.txt:
+# After github-get_file_contents on a directory saves output to /tmp/<notice-path>:
+# (read the exact path from the tool's "Output too large, saved to:" notice)
 node -e "
   const fs = require('fs');
-  const files = JSON.parse(fs.readFileSync('/tmp/output.txt'));
+  const files = JSON.parse(fs.readFileSync('/tmp/<notice-path>'));
   console.log(files.map(f => f.name).join('\n'));
 "
 # Result: just the filenames — 57 lines instead of 45KB of JSON
 ```
 
 ```bash
-# After a large grep result:
-grep -r "pattern" src/ | cut -d: -f1 | sort -u
-# Result: just the unique file paths, not full match context
+# After a large grep result, extract only unique file paths:
+# Note: cut -d: -f1 may misparse filenames containing colons (rare but possible)
+grep -r "pattern" src/ --include="*.ts" -l
+# Prefer grep's -l flag (list filenames only) over post-processing with cut
 ```
 
 This strategy trades a small secondary tool call for a large reduction in context consumed by reasoning over the full blob.
@@ -141,21 +147,22 @@ This strategy trades a small secondary tool call for a large reduction in contex
 | Question | Recommended Strategy |
 |----------|---------------------|
 | Can the tool's query parameters constrain the result? | **Strategy 1** (Filter at Source) — always preferred |
-| Is the result a paginated resource with a known `total_count`? | **Strategy 2** (Paginate Explicitly) |
+| Is the result a search endpoint with a `total_count`? | **Strategy 2** with `total_count` termination |
+| Is the result a REST list endpoint (no `total_count`)? | **Strategy 2** with empty-page confirmation |
 | Did the tool return a suspiciously round number of results? | **Strategy 3** (Detect Truncation) — suspect truncation |
-| Is the tool output a large blob with no filter API? | **Strategy 4** (Targeted Extraction) |
+| Is the tool output a large blob saved to `/tmp`? | **Strategy 4** (Targeted Extraction) — if filesystem is accessible |
 | Does the task require a complete enumeration? | Apply **Strategy 2** or **3**; sampling is not acceptable |
 | Does the task only need a representative sample? | **Strategy 1** with a reasonable limit is sufficient |
 
 ## Evidence
 
-**Manifest builder on 57-file repo**: `github-get_file_contents(path="src/content/patterns")` returned a 45.7KB JSON response that was saved to `/tmp` by the tool. The agent's context received only the first 500 characters — a single file's metadata. A follow-up `node` extraction step (Strategy 4) parsed the `/tmp` file and returned 57 filenames in ~30 lines. The manifest was built correctly; acting on the truncated in-context response would have produced a 1-item manifest.
+**Manifest builder on 57-file repo**: `github-get_file_contents(path="src/content/patterns")` returned a 45.7KB JSON response. The tool saved the full response to `/tmp` and provided only a preview (first ~500 characters — one file entry's metadata) in the agent's context. A follow-up `node` extraction step (Strategy 4) parsed the `/tmp` file and returned 57 filenames in ~30 lines. The manifest was built correctly; acting on the truncated in-context preview would have produced a 1-item manifest.
 
-**`recall_memory` 60KB topic truncation**: A memory topic tracking the project manifest had grown to ~60KB after 15 weeks of incremental updates. `recall_memory(query="project-agent-prompt-patterns-manifest")` returned a truncated preview. The agent passed `view_range=[1, 40]` on the second call to read the header section specifically, then `view_range=[40, 80]` for the manifest body — two targeted calls instead of one unread large one.
+**`recall_memory` 60KB topic truncation**: A memory topic tracking the project manifest had grown to ~60KB after 15 weeks of incremental updates. `recall_memory(query="project-agent-prompt-patterns-manifest")` returned a truncated preview. The agent passed `view_range=[1, 40]` on the second call to read the header section specifically, then `view_range=[41, 80]` (non-overlapping) for the manifest body — two targeted reads instead of one truncated large one.
 
-**`github-list_issues` false-negative dedup**: An ideation cron called `github-list_issues` without `perPage` to check for existing issues. The repo had 91 open issues; the API returned 30 (one page). The target issue was #67 — it was not in the first 30. The cron concluded "not found" and filed a duplicate. Adding `perPage=100` to the call returned all 91 issues on one page, and the dedup check worked. (See [Dedup-Search Before Filing](/agent-prompt-patterns/patterns/dedup-search-before-filing) for the issue-filing-specific version of this problem.)
+**`github-list_issues` false-negative dedup**: An ideation cron called `github-list_issues` without `perPage` to check for existing issues. The repo had 91 open issues; the API returned 30 (one page, default). The target issue was #67 — it was not in the first 30. The cron concluded "not found" and filed a duplicate. Switching to `github-search_issues` (which returns `total_count`) with `perPage=100` covered all 91 issues in one call and the dedup check worked. Note: `perPage=100` happened to cover all 91 issues; a repo with 150+ issues would require explicit pagination. See [Dedup-Search Before Filing](/agent-prompt-patterns/patterns/dedup-search-before-filing) for the issue-filing-specific treatment.
 
-**Round-number truncation signal**: A `grep` call with `head_limit=50` returned exactly 50 matches. The agent checked whether 50 was a common truncation boundary (it is) and re-ran the grep with `head_limit=200`. The actual match count was 73. Acting on the 50-item result would have missed 23 matches (31% of the real result set).
+**Round-number truncation signal**: A `grep` call with `head_limit=50` returned exactly 50 matches. The agent recognized 50 as a common truncation boundary and re-ran with `head_limit=200`. The actual match count was 73. Acting on the 50-item result would have missed 23 matches (31% of the real result set).
 
 ## Tradeoffs
 
@@ -171,11 +178,15 @@ This strategy trades a small secondary tool call for a large reduction in contex
 
 - **Recall memory topic growth**: Memory topics written to repeatedly across sessions grow without automatic pruning. A topic that was 5KB six months ago may be 60KB today. Pass `view_range` proactively for any topic known to be a long-running accumulation log.
 
-- **`perPage` maximums vary by endpoint**: GitHub's API allows `perPage=100` for most list endpoints. Requesting `perPage=200` silently clamps to 100 — you will still get exactly 100 items and may miss items 101+. Know the endpoint maximum before assuming one call covers everything.
+- **`perPage` maximums and endpoint behavior**: GitHub's API allows `perPage=100` for most list and search endpoints; behavior for values above the maximum varies by endpoint — some return HTTP 422 (Unprocessable Entity), others silently clamp to the maximum. Always stay within the documented limit for the specific endpoint.
+
+- **`result.length < perPage` is a heuristic, not a guarantee**: If the total result count happens to be an exact multiple of `perPage`, the last page returns exactly `perPage` items — indistinguishable from a mid-stream page. For completeness-critical tasks, confirm termination by fetching one more page and verifying it is empty, or use a search endpoint that returns `total_count`.
+
+- **`filename:` search qualifier does not accept globs**: GitHub's `github-search_code filename:` qualifier matches exact filenames, not glob patterns. Use `path:` to restrict to a directory and `extension:` to filter by file type instead of `filename:*.md`.
 
 - **Pagination is not free**: For very large result sets (hundreds of items), full pagination is expensive in both API calls and context. Use Strategy 1 (filter at source) to reduce the result set before paginating — paginate a narrow query, not a broad one.
 
-- **Extraction scripts require the `/tmp` file to exist**: Strategy 4 assumes the tool saved output to a known `/tmp` path. Verify the path from the truncation notice before running the extraction script. Paths include a timestamp and random suffix and change each call.
+- **Strategy 4 requires filesystem access**: Strategy 4 (Targeted Extraction from `/tmp`) requires that the agent's execution environment can read files at the path reported in the truncation notice. In cloud-hosted or sandboxed agent environments where tool output is delivered through a different channel, the `/tmp` path may be unreachable. Confirm the execution model before relying on this strategy.
 
 ## Related Patterns
 
