@@ -9,6 +9,7 @@ const patterns = defineCollection({
       'task-design',
       'agent-autonomy',
       'feedback-loops',
+      'memory-management',
       'multi-agent',
     ]),
     slug: z.string().optional(),
