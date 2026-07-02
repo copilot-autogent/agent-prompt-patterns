@@ -56,20 +56,23 @@ The exact propagation rules depend on the container/process setup. The pattern i
 
 ### Step 1 — Verify the var in the actual subprocess context
 
-Before concluding a token is absent from the container, check whether it is absent from the _subprocess_:
+Before concluding a token is absent from the container, check whether it is absent from the _subprocess_. Check presence without printing the secret value:
 
 ```bash
-# Check the subprocess env for the specific var
-printenv GITHUB_API_TOKEN
+# Check presence without revealing the token value
+printenv GITHUB_API_TOKEN > /dev/null && echo "present (non-empty)" || echo "absent or empty"
 
-# Or equivalently
-echo $GITHUB_API_TOKEN
+# Alternatively, check character count (non-zero = present)
+printenv GITHUB_API_TOKEN | wc -c
 
-# To compare against PID1 (if accessible)
-cat /proc/1/environ | tr '\0' '\n' | grep GITHUB_API_TOKEN
+# To compare against PID1 (may require root/CAP_SYS_PTRACE; returns "Permission denied" otherwise)
+# Use 2>/dev/null and check exit code — do NOT print the var value
+cat /proc/1/environ 2>/dev/null | tr '\0' '\n' | grep '^GITHUB_API_TOKEN=' | wc -c
+# non-zero output = var present in PID1; zero = absent or permission denied
+# If /proc/1/environ is permission-denied, ask the operator or check via `docker inspect`
 ```
 
-If `printenv` in the subprocess shows empty but `/proc/1/environ` shows the var, the token exists at PID1 but is not propagated to subprocesses. This is a propagation boundary — not a credential absence.
+If `printenv` in the subprocess shows empty but PID1 check shows the var present, the token exists at PID1 but is not propagated to subprocesses. This is a propagation boundary — not a credential absence.
 
 ### Step 2 — Prefer MCP/tool-layer auth over subprocess shell calls
 
@@ -83,12 +86,14 @@ curl -H "Authorization: token $GITHUB_API_TOKEN" https://api.github.com/repos/ow
 github-get_file_contents owner="owner" repo="repo" path="README.md"
 ```
 
-Reserve subprocess shell calls for operations where no tool-layer equivalent exists. When a subprocess call is required and env var injection is needed, inject explicitly:
+Reserve subprocess shell calls for operations where no tool-layer equivalent exists. When a subprocess call is required and env var injection is needed, assign to a local variable first so the expansion is correct:
 
 ```bash
 # Explicit injection when subprocess auth is required
-GITHUB_API_TOKEN="$(cat /proc/1/environ | tr '\0' '\n' | grep ^GITHUB_API_TOKEN | cut -d= -f2-)" \
-  curl -H "Authorization: token $GITHUB_API_TOKEN" https://api.github.com/repos/owner/repo
+# Assign first, then expand — do NOT use VAR="$(cmd)" cmd in a single line,
+# as the shell expands $VAR in the command before the assignment takes effect
+token=$(cat /proc/1/environ 2>/dev/null | tr '\0' '\n' | grep '^GITHUB_API_TOKEN=' | cut -d= -f2-)
+curl -H "Authorization: token ${token}" https://api.github.com/repos/owner/repo
 ```
 
 ### Step 3 — Falsify auth failure attribution before writing diagnoses
@@ -96,12 +101,14 @@ GITHUB_API_TOKEN="$(cat /proc/1/environ | tr '\0' '\n' | grep ^GITHUB_API_TOKEN 
 When a subprocess call fails with an apparent auth error, apply the falsification sequence before writing the diagnosis anywhere persistent:
 
 ```
-1. Check subprocess env: printenv TOKEN_NAME → empty?
-2. Check parent env: cat /proc/1/environ | tr '\0' '\n' | grep TOKEN_NAME → present?
-   → If present at PID1 but absent in subprocess: propagation boundary, not credential absence
-   → If absent at PID1: genuine credential absence — escalate
+1. Check subprocess env: printenv TOKEN_NAME > /dev/null && echo "present" || echo "absent"
+2. Check parent env: cat /proc/1/environ 2>/dev/null | tr '\0' '\n' | grep '^TOKEN_NAME=' | wc -c
+   → non-zero AND subprocess empty: propagation boundary, not credential absence
+   → zero (or permission denied): possible genuine credential absence — verify with operator
 3. Verify tool layer: does an equivalent MCP tool call succeed?
-   → If MCP succeeds: confirms the credential exists; the issue is subprocess propagation
+   → If MCP succeeds: tool-layer auth is working (note: MCP may use a different server-side
+     credential, so MCP success does not prove the subprocess token exists — it confirms
+     the operation is achievable at the tool layer)
    → If MCP also fails: stronger signal of genuine credential absence
 ```
 
@@ -117,7 +124,7 @@ When a diagnosis must be written into a push-file (CONTEXT.md, memory), scope it
 
 # GOOD — scoped to the observed propagation boundary, with falsification evidence
 "GITHUB_API_TOKEN is present in PID1 env but NOT propagated to bash subprocesses.
-Confirmed: printenv GITHUB_API_TOKEN in subprocess → empty; cat /proc/1/environ → present.
+Confirmed: printenv GITHUB_API_TOKEN in subprocess → empty; PID1 check → present.
 MCP GitHub tools continue to succeed (use MCP server auth). Use MCP tools for GitHub API
 calls; do NOT diagnose this as credential absence."
 ```
@@ -131,7 +138,7 @@ A correctly scoped claim prevents future agents from re-deriving the wrong root 
 Subprocess `$GITHUB_API_TOKEN` appeared empty → agent wrote CONTEXT.md gotcha: "GITHUB_API_TOKEN missing from container." Empirical falsification run shortly after:
 
 - `printenv GITHUB_API_TOKEN` in subprocess → empty
-- `cat /proc/1/environ | tr '\0' '\n' | grep GITHUB_API_TOKEN` → var present at PID1
+- PID1 env check → var present at PID1
 - MCP GitHub tools (GraphQL mutations, REST calls): **17 successful calls with 0 auth errors** throughout the same period
 
 The gotcha was corrected with a note: "DO NOT diagnose a symptom as 'token missing from container' — verify PID1 vs subprocess env before escalating." The original misdiagnosis had already been read by at least one sprint agent and influenced its debugging strategy.
@@ -155,6 +162,12 @@ The `$VAR` expansion in bash is silent — empty string, no error, no warning. A
 **Watch out for:**
 
 - **Silent empty var expansion**: bash silently expands missing vars to empty strings. A missing `$TOKEN` in a `curl` command looks like `Authorization: token ` — a syntactically valid but semantically empty header — and produces a clean 401. Nothing in the error output indicates env var propagation as the cause.
+
+- **`/proc/1/environ` access restrictions**: reading PID1's environment typically requires matching UID or `CAP_SYS_PTRACE`. In many container setups, `cat /proc/1/environ` returns "Permission denied". Use `2>/dev/null` and check via `wc -c` so a permission failure doesn't look like a missing var. Fallback: `docker inspect` or operator confirmation.
+
+- **Assignment-before-expansion trap**: `VAR="$(cmd)" some-command $VAR` is a common shell mistake — the shell expands `$VAR` in `some-command`'s arguments before the temporary assignment takes effect. Always assign to a named variable first, then use it.
+
+- **MCP success ≠ subprocess token existence**: MCP tools use a server-level credential that may be distinct from the subprocess env token. MCP success confirms the operation is reachable at the tool layer; it does not confirm that the same credential exists and is usable in subprocess context.
 
 - **Confirming the wrong hypothesis with a correlated signal**: MCP call succeeds AND subprocess call fails → might look like "the feature works but my script is broken." The actual explanation (propagation boundary) requires checking both the subprocess env and PID1 env to surface.
 
