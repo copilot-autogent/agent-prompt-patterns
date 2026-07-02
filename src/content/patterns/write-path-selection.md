@@ -34,7 +34,7 @@ It does NOT apply to:
 
 The pattern is especially critical when a sprint agent is **editing an existing large file** rather than creating a new one from scratch, because the destructive recovery failure mode replaces a known-good dataset with a degraded one.
 
-Note on reads: while this pattern focuses on the write path, large file reads via content APIs may also be paginated or truncated depending on the tool. Verify source data completeness before writing, especially for files that may themselves be large.
+**Read-modify-write operations** require extra care: if the agent reads a large file through an inline tool that paginates or truncates large responses, it may silently receive an incomplete copy before writing the edited version back. For large read-modify-write operations, the local clone path covers both problems — the `git clone` fetches the complete file, and the `git push` bypasses the inline write limit.
 
 ## Solution
 
@@ -49,12 +49,12 @@ Before writing any file to a repository, estimate the expected write payload siz
 **For large write payloads (> 100 KB)**, the correct write path is:
 
 1. Clone the repository to a local temporary directory
-2. Pull the latest changes from the target branch to avoid non-fast-forward conflicts
+2. Fetch the latest changes and fast-forward the working branch: `git fetch origin && git merge --ff-only origin/<branch>` (avoids implicit merge commits from `git pull`)
 3. Apply edits to the local file using standard file I/O
-4. Run `git add`, `git commit`, `git push` from the local clone
+4. Run `git add`, `git commit`, `git push origin <branch>` from the local clone
 5. Clean up the temporary directory on completion
 
-This path avoids inline payload limits because git packs and compresses the delta, and the push protocol handles repositories of any size within hosting platform quotas (note: hosted repositories still enforce total repository size limits and may require Git LFS for individual files above a separate threshold, typically 50–100 MB). The overhead is a one-time `git clone` latency (typically 5–30 seconds) — a negligible cost compared to the risk of data loss.
+This path avoids inline payload limits because git packs and compresses the delta. Note that hosting platforms still enforce their own limits (per-file size caps, total repository size quotas, branch protection rules), so the local push path is not universally available — verify the repository's policies and check for LFS requirements before relying on this approach.
 
 **When writing large files via the inline path is unavoidable** (e.g., the environment lacks shell access), validate the response explicitly: fetch the written file back and compare its structure and content depth against the pre-write source. Line count or byte count alone is insufficient — same-length corruption or reordered content will pass those checks. For structured data files, compare entry count, key presence, and a sample of field values.
 
