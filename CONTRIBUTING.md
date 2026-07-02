@@ -62,8 +62,8 @@ Must be one of:
 - `task-design` — How to break down and route work
 - `agent-autonomy` — Decision-making and self-directed behavior
 - `feedback-loops` — Learning and memory across sessions
-- `multi-agent` — Coordination and orchestration
 - `memory-management` — Storage topology, recall quality, and memory pruning
+- `multi-agent` — Coordination and orchestration
 
 ### Evidence Levels
 
