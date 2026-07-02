@@ -3,7 +3,7 @@ title: "Deploy-Lag Verification"
 category: "feedback-loops"
 evidenceLevel: "strong"
 summary: "After merging a fix, verify two facts before declaring it live: the artifact was rebuilt from the patched commit, and the process restarted after that build. Neither alone is sufficient."
-relatedPatterns: ["side-effect-verification", "empirical-validation-loop", "observe-resolve-pairing", "sprint-continuity"]
+relatedPatterns: ["side-effect-verification", "empirical-validation-loop", "observe-resolve-pairing", "sprint-continuity", "client-rendered-deploy-verification"]
 tags: ["reliability", "verification", "deployment", "debugging", "incident-response", "false-green", "merge-vs-deploy"]
 ---
 
@@ -181,3 +181,4 @@ In a production AI agent system, a critical authentication bug was patched and m
 - **[Empirical Validation Loop](/agent-prompt-patterns/patterns/empirical-validation-loop)** — when monitoring for fix effectiveness, treat post-merge observations as a measurement, not a conclusion; verification requires checking deployment state before interpreting monitoring data
 - **[Observe-Resolve Pairing](/agent-prompt-patterns/patterns/observe-resolve-pairing)** — the "observe" step in incident response should include deployment state as a first-class observable; an undeployed fix is a known observable state, not an anomaly
 - **[Sprint Continuity](/agent-prompt-patterns/patterns/sprint-continuity)** — a sprint manifest that records "merged at commit abc123 at 00:53Z" enables the next sprint to run deploy-lag verification without re-reading all logs; structured handoff reduces the cost of the two-step check
+- **[Client-Rendered Deploy Verification](/agent-prompt-patterns/patterns/client-rendered-deploy-verification)** — the complementary check for Astro/SPA sites: confirms the deployed artifact actually renders (not just that it was built from the right commit)

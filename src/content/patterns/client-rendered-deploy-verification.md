@@ -4,7 +4,7 @@ category: "feedback-loops"
 evidenceLevel: "strong"
 summary: "For Astro/SPA/client-rendered sites, HTTP-level checks (curl 200) and served-HTML marker-grep both produce false positives. Apply a two-layer verification protocol: Layer 1 (cache-bypassing node fetch + chunk-integrity check) is authoritative; Layer 2 (browser render after CDN propagation) detects hydration failures that Layer 1 cannot."
 relatedPatterns: ["deploy-lag-verification", "side-effect-verification", "empirical-validation-loop", "sprint-completion-verification"]
-tags: ["verification", "deployment", "client-rendering", "spa", "astro", "browser-render", "false-positive", "false-negative", "cdn", "hydration", "chunk-integrity"]
+tags: ["verification", "deployment", "client-rendering", "spa", "astro", "browser-render", "false-positive", "false-negative", "cdn", "hydration", "chunk-integrity", "tier:2-standard"]
 ---
 
 ## Problem
@@ -50,26 +50,32 @@ Apply a two-layer verification protocol. Layer 1 is always required and is autho
   const origin = 'https://example.github.io';
   const appPath = '/my-app/'; // set to '/' for root-domain deploys
 
-  const html = await fetch(origin + appPath + '?cb=' + Date.now(), { cache: 'no-store' })
-    .then(r => r.text());
+  const res = await fetch(origin + appPath + '?cb=' + Date.now(), { cache: 'no-store' });
+  if (!res.ok) throw new Error(`HTML fetch failed: ${res.status} ${origin + appPath}`);
+  const html = await res.text();
 
   // Extract chunk references emitted by the bundler.
+  // IMPORTANT: for project sites (e.g. /my-app/), Astro emits absolute paths that include
+  // the base: `src="/my-app/_app/immutable/foo.js"`. The regex below captures the full
+  // path from `appPath` onward — adjust to your actual base path.
   // Adjust regex for your framework:
-  //   Astro/SvelteKit:  /_app\/immutable\/[^\s"']+\.js
-  //   Next.js:          \/_next\/static\/[^\s"']+\.js
-  //   CRA:              \/static\/js\/[^\s"']+\.chunk\.js
-  const chunkRefs = [...html.matchAll(/\/_app\/immutable\/[^\s"']+\.js/g)]
-    .map(m => m[0]);
+  //   Astro/SvelteKit (project site):  \/my-app\/_app\/immutable\/[^\s"']+\.js
+  //   Astro/SvelteKit (root domain):   \/_app\/immutable\/[^\s"']+\.js
+  //   Next.js:                         \/_next\/static\/[^\s"']+\.js
+  //   CRA:                             \/static\/js\/[^\s"']+\.chunk\.js
+  const escaped = appPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const chunkPattern = new RegExp(escaped + '_app\\/immutable\\/[^\\s"\']+\\.js', 'g');
+  const chunkRefs = [...html.matchAll(chunkPattern)].map(m => m[0]);
+
+  if (chunkRefs.length === 0) {
+    console.warn('WARNING: no chunk references found — verify regex matches your bundler output');
+  }
 
   for (const ref of chunkRefs) {
-    // Note: chunks are relative to the origin root, not the app sub-path.
-    // For project sites (e.g. /my-app/), Astro emits chunks at /my-app/_app/...,
-    // so prepend origin + appPath.basePath or just origin if chunks are at root.
-    // Verify against your actual build output.
-    const res = await fetch(origin + ref, { method: 'HEAD', cache: 'no-store' });
-    console.log(res.status, ref);
+    const chunkRes = await fetch(origin + ref, { method: 'HEAD', cache: 'no-store' });
+    console.log(chunkRes.status, ref);
     // If HEAD is rejected by the CDN (405), fall back to GET with range:
-    // const res = await fetch(origin + ref, { headers: { Range: 'bytes=0-0' }, cache: 'no-store' });
+    // const chunkRes = await fetch(origin + ref, { headers: { Range: 'bytes=0-0' }, cache: 'no-store' });
   }
   // All must be 200 (or 206 for range GETs). Any 404 = real regression, not cache artifact.
 })();
@@ -97,15 +103,18 @@ Using Playwright or equivalent:
 const page = await browser.newPage();
 
 // Register network listeners BEFORE navigation to capture all load-time failures.
-const failed = [];
-page.on('requestfailed', req => failed.push(req.url()));
-page.on('response', res => { if (res.status() >= 400) failed.push(res.url()); });
+const failedUrls = new Set(); // use Set to avoid double-recording requestfailed + response(>=400)
+page.on('requestfailed', req => failedUrls.add(req.url()));
+page.on('response', res => { if (res.status() >= 400) failedUrls.add(res.url()); });
 
 await page.goto(url, { waitUntil: 'networkidle' });
 
 // Check 1: interactive content rendered (not stuck “Loading…”)
-// Note: match the exact string your app renders — U+2026 ellipsis vs three ASCII dots differ.
-const loadingCount = await page.locator('text=Loading…').count();
+// Use getByText with exact:true + filter to visible nodes only, to avoid false positives
+// from hidden skeleton/template elements that may permanently contain placeholder text.
+// Adapt the locator to your app's actual loading-state string and selector.
+const loadingCount = await page.getByText('Loading…', { exact: true })
+  .locator(':visible').count();
 assert(loadingCount === 0, `${loadingCount} panels still showing "Loading…"`);
 
 // Check 2: canvas or content elements present
@@ -113,7 +122,9 @@ const contentCount = await page.locator('canvas, .panel-content').count();
 assert(contentCount > 0, 'No rendered content found');
 
 // Check 3: no failed resource loads (captured above, including initial navigation)
-assert(failed.length === 0, `Failed resources: ${failed.join(', ')}`);
+// Note: filter to first-party URLs to avoid noise from analytics/third-party requests.
+const firstPartyFailed = [...failedUrls].filter(u => u.startsWith(origin));
+assert(firstPartyFailed.length === 0, `Failed resources: ${firstPartyFailed.join(', ')}`);
 ```
 
 **Anti-patterns to avoid:**
@@ -174,7 +185,7 @@ Both incidents are from production agentic CI/CD systems (June 2026). Together t
 
 ## Tradeoffs
 
-**Benefit:** Eliminates two systematic false-signal failure modes simultaneously. Layer 1 provides a 15-second, no-browser-required authoritative check that is immune to CDN cache timing. Layer 2 provides the only check that can detect hydration failures, but only after Layer 1 rules out artifact-level regressions.
+**Benefit:** Eliminates two systematic false-signal failure modes simultaneously. Layer 1 provides a fast, no-browser-required check using cache-bypassing fetches that are largely immune to the browser HTTP cache timing issue — though note it still passes through CDN edges, so running it during the first few seconds of CDN propagation can observe mixed edge state. Wait ≥ 30s after merge before Layer 1, ≥ 90s before Layer 2. Layer 2 provides the only check that can detect hydration failures, but only after Layer 1 rules out artifact-level regressions.
 
 **Cost:** Layer 1 requires parsing chunk references from HTML — the exact pattern depends on the bundler (`_app/immutable/*.js` for SvelteKit/Astro, `static/js/*.chunk.js` for CRA, `_next/static/*.js` for Next.js). Update the extraction regex to match your build output. Layer 2 requires a headless browser environment.
 
