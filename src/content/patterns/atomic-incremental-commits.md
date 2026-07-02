@@ -1,7 +1,7 @@
 ---
 title: "Atomic Incremental Commits"
 category: "task-design"
-evidenceLevel: "strong"
+evidenceLevel: "moderate"
 summary: "Agents accumulate large changesets locally — editing dozens of files across many features — and commit everything in one large 'implement feature X' commit. This makes bisection impossible, inflates PR review blast radius, and forces full rollback of unrelated changes when one part needs to be reverted. Structure every change as the smallest independently-deployable unit, committed immediately upon completion."
 relatedPatterns: ["verification-before-completion", "long-horizon-task-phasing", "scope-boundary-declaration", "pre-commit-planning-phase"]
 tags: ["git", "commits", "atomicity", "rollback", "bisection", "pr-hygiene", "task-design", "incremental", "blast-radius"]
@@ -55,6 +55,8 @@ Even in squash-merge workflows, granular commits serve as checkpoints: if the ag
 | | `"fix lint error in settings handler"` |
 | `"refactor + fix + add test"` | Three separate commits, each with passing tests |
 
+When a worktree contains changes spanning multiple concerns, use selective staging to commit each concern independently: stage only the files belonging to one logical change, commit, then stage the next. This prevents mixed commits even when edits to multiple concerns are already in flight.
+
 **Rule 2 — Commit on every stable checkpoint.** A checkpoint is any moment where the working tree is correct and tests pass. Examples:
 - After passing tests for a single module
 - After fixing a lint error
@@ -102,7 +104,7 @@ Avoid: `"wip"`, `"stuff"`, `"various fixes"`, `"implement feature"`. These messa
 - **"I'll commit at the end when everything works"** — this treats commits as a publishing step, losing all checkpoints along the way
 - **Mixing refactors with bug fixes in one commit** — these have different revert semantics; keep them separate
 - **Squashing 12 meaningful steps into "implement everything" before pushing** — individual commit history within a branch matters for recovery; squash-merge at the PR boundary is appropriate, squashing during local work is not
-- **Accumulating local commits for days before pushing** — violates *push regularly, notify user on completion*; local-only commits create a single point of failure if the session dies
+- **Accumulating local commits without pushing** — local-only commits create a single point of failure if the session dies; push (or otherwise persist) each logical unit so that the recovery point survives a session restart (applicable where pushing partial branches is permitted by team policy)
 
 ## Evidence
 
@@ -110,7 +112,7 @@ Avoid: `"wip"`, `"stuff"`, `"various fixes"`, `"implement feature"`. These messa
 
 **Deploy bisection (factor-dashboard, June 2026)**: A regression appeared in production after a sprint whose branch history was not preserved — 12 intermediate steps had been squashed before being pushed. The regression was in one of the 12 steps, but no bisection was possible because each step was not individually revertable in the push history. Manual code archaeology took 45 minutes to locate the responsible change. In workflows that preserve branch commit history (merge commits, or non-squash pushes), having each step as a separate commit enables `git bisect` to isolate the regression automatically.
 
-**Autogent workflow grounding**: The autogent workflow explicitly states *"push regularly, no accumulated local commits"* and *"notify user on completion"*. This rule was added after recurring incidents where agents worked for extended sessions without pushing, then lost work when sessions ended before the push completed. Granular incremental commits are the mechanism that makes regular pushing practical — there is always a stable unit to push.
+**Workflow policy grounding**: Several team workflow policies (e.g., "push regularly, notify on completion") were introduced to address incidents where agents completed extended sessions without persisting their work, then lost everything when the session ended. Granular incremental commits are the mechanism that makes progressive persistence practical — there is always a stable, atomic unit available to push.
 
 **Large-commit review miss**: A PR with 14 files and a single commit message `"implement feature X"` was reviewed and merged. A subtle off-by-one error was present in file 9 of 14. Post-merge incident analysis found the reviewer had reviewed files 1–6 closely, then skimmed the remaining 8. The diff was too large to sustain attention across its full length. The same change decomposed into 4 commits of 3–4 files each would have been fully reviewed — each commit boundary signals a concern boundary, prompting fresh attention.
 
