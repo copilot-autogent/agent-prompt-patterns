@@ -41,7 +41,7 @@ If the answer is **no**, Rollback-First Planning is mandatory. If the answer is 
 **Scope exclusions — this pattern is NOT required for:**
 
 - Read-only operations (queries, file reads, status checks)
-- Operations with trivially invertible effects (adding a row that can be deleted, creating a file that can be removed)
+- Operations with trivially invertible effects **and no external side effects** — e.g., creating a file that can be removed. Note: inserting a database row is *not* trivially invertible if the insert triggers webhooks, increments counters, generates auto-increment IDs visible to other systems, or creates audit/history records.
 - Operations already gated by an upstream checkpoint system that guarantees rollback capability
 
 ## Solution
@@ -67,12 +67,12 @@ For multi-stage actions, write a rollback entry for each stage: "if step N fails
 
 ### Step 3: Verify rollback feasibility
 
-Before executing the forward action, confirm that every resource named in the rollback plan *exists and is accessible right now*:
+Before executing the forward action, confirm that every resource named in the rollback plan *exists, is accessible, and corresponds to the current pre-change system state*:
 
-- The rollback script passes a syntax check (`psql --dry-run`)
-- The backup file is present and non-empty (`aws s3 ls s3://app-snapshots/backup-2026-07-03-pre-migration`)
-- The previous release tag exists in the deploy system and is deployable
-- The target branch allows revert commits (not protected against direct push)
+- The rollback script is syntactically valid and targets the correct schema version. Use the tool's own lint/validate command (e.g., `sqlfluff lint V002__down.sql`), or test against a staging schema with a transaction that is rolled back: `psql -c 'BEGIN; \i V002__down.sql; ROLLBACK;'`. Do not rely on a non-existent `--dry-run` flag.
+- The backup file is present, non-empty, and was created **after the last known-good state and before this operation** (verify the timestamp: `aws s3 ls s3://app-snapshots/backup-2026-07-03-pre-migration --human-readable`)
+- The previous release tag exists in the deploy system, is deployable, and matches the version **currently running in production** — not an older pinned tag
+- For branch reset or force operations: the pre-operation ref is preserved (e.g., in `git reflog` or as an explicit tag/branch), and force-push is permitted on the target branch (check branch protection rules via the API or `git remote show origin`)
 
 **If any rollback resource cannot be verified, the forward action must not proceed.** Create the missing resource first (take the backup, write the down migration, pin the release), then re-verify before proceeding.
 
@@ -111,6 +111,8 @@ The OBSERVE → HYPOTHESIZE → MINIMISE → TEST → EVALUATE → DOCUMENT loop
 
 **Verbal rollback plans** — rollback procedures must be written, not held in working memory. A verbal plan ("I'll just revert the commit") is lost when context is exhausted or the session ends mid-failure.
 
+**Verifying existence without verifying version** — a backup that passes an existence check may predate the current schema version and be useless for restoring from the current state. Always verify that rollback resources correspond to the *current* pre-change state, not merely that they exist.
+
 ## Evidence
 
 **Sprint mid-flight failures**: Multiple sprint agent failures left systems in partial states requiring manual human intervention. CONTEXT.md documents deploy pipeline failures (GitHub Pages timeout) that were harder to recover from when no instant-rollback mechanism existed — the previous release had not been pinned and the deploy system had no re-deploy button for prior builds. Establishing rollback-first as a pre-condition would have blocked these pipelines until a rollback path was confirmed.
@@ -123,6 +125,6 @@ The OBSERVE → HYPOTHESIZE → MINIMISE → TEST → EVALUATE → DOCUMENT loop
 
 **Upfront time cost**: Writing and verifying a rollback plan adds 2–5 minutes before the forward action begins. For frequently executed operations (daily deploys, routine migrations), this cost is not zero. Mitigation: templatize rollback plans for recurring operation types so verification, not authoring, is the primary cost.
 
-**False negatives on "verified" resources**: A backup that passes an existence check (`aws s3 ls`) may still be corrupted, incomplete, or too old to be useful. Verification depth must be calibrated to the operation's risk level: for high-risk operations, a restore dry-run is warranted; for moderate-risk, an existence check is sufficient.
+**False negatives on "verified" resources**: A backup that passes an existence check (`aws s3 ls`) may still be corrupted, incomplete, or too old to be useful. Verification depth must be calibrated to the operation's risk level: for high-risk operations, a restore dry-run is warranted; for moderate-risk, an existence check plus timestamp validation is sufficient.
 
 **Scope creep on minimization**: Step 3 ("if a rollback resource is missing, create it first") can expand scope indefinitely if the missing resource is itself complex to create. Set a time budget for the rollback preparation phase; if it exceeds the budget, escalate rather than proceeding without a verified rollback.
