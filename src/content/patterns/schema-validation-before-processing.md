@@ -27,7 +27,7 @@ It is most critical when:
 
 - **Column-indexed tabular data** is consumed (CSV, TSV, spreadsheet exports) — positional indexing is fragile to any column insertion or removal.
 - **Recurring ingestion pipelines** re-fetch the same source on a schedule — the schema that was valid last week may not be valid today.
-- **Data crosses locale or encoding boundaries** — sources using full-width characters, BOM-prefixed files, or mixed encodings require normalization before type-checking those specific fields.
+- **Data crosses locale or encoding boundaries** — sources using full-width characters, BOM-prefixed files, or mixed encodings require special handling before structural validation: BOM markers must be stripped at decode time (before header parsing), and field-level encoding normalization applied before type-checking.
 - **Downstream consumers depend on field presence and type** — a missing field that defaults to `null` without notice can cascade into incorrect computations or silent omissions.
 
 The pattern is less critical for data the agent generates itself (e.g., writing a JSON file and immediately reading it back) or for fixed, well-tested internal API contracts with strong versioning guarantees.
@@ -38,9 +38,9 @@ Apply schema validation as a mandatory gate between data ingestion and business 
 
 **Step 1 — Enumerate expected structure before writing processing code.** Document the schema as a first-class artifact: field names, column order (for tabular data), required vs. optional fields, data types, value constraints, and encoding expectations. This forces the schema assumption to be explicit rather than implicit in the code.
 
-**Step 2 — Normalize encoding on affected fields before validation.** For sources known to use locale-specific encoding (full-width digits, mixed Unicode normalization forms), apply Unicode normalization (NFKC or equivalent) to the specific fields that require it — before any type check or regex match on those fields. Scope normalization to the fields that need it: applying compatibility normalization globally is lossy and can alter semantically meaningful identifiers or free-text content.
+**Step 2 — Normalize encoding on affected fields before validation.** For sources with BOM-prefixed files, strip the BOM at decode time before header parsing (a BOM on the first byte of the header causes the first column name to never match). For sources using locale-specific digit or character encoding (full-width digits, mixed Unicode normalization forms), apply Unicode normalization (NFKC or equivalent) to the specific fields that require it — before any type check or regex match. Scope normalization to the fields that need it: applying compatibility normalization globally is lossy and can alter semantically meaningful identifiers or free-text content.
 
-**Step 3 — Validate immediately on first access.** Immediately after receiving data from an external source, assert: required fields are present, column count matches expectation (for CSVs — both at the header level and per row), and critical fields parse to the expected type. Do not defer this to the point of use.
+**Step 3 — Validate immediately on first access.** Immediately after receiving data from an external source, assert in order: (a) header names are unique and match expected column list; (b) column count matches expectation — both at the header level and per-row (a valid header can coexist with malformed rows); (c) required fields are present in each record; (d) critical fields parse to the expected type (not merely present but non-null and parseable).
 
 **Step 4 — Fail loudly on mismatch.** Throw a structured validation error rather than silently coercing bad data or skipping malformed rows. The error should include: the source identifier, the expected vs. actual schema (column count, missing fields, type mismatch), and a reference to the first-failing field. Avoid including raw field values in error messages when data may contain sensitive content — log field names and positions, not values.
 
@@ -50,38 +50,52 @@ A minimal validation gate looks like:
 
 ```js
 function validateSchema(data, expected) {
-  // 1. Normalize encoding on fields that need it (not the whole payload)
-  const normalized = normalizeEncodingOnFields(data, expected.encodedFields);
+  // Step 2: strip BOM at decode time, then normalize encoding on specific fields
+  const decoded = stripBOM(data.raw);
+  const normalized = normalizeEncodingOnFields(decoded, expected.encodedFields);
 
-  // 2. Check header column count
-  if (normalized.columns.length !== expected.columnCount) {
+  // Step 3a: check header uniqueness before mapping to objects
+  const headers = normalized.columns;
+  if (new Set(headers).size !== headers.length) {
+    throw new ValidationError({ source: data.source, issue: "Duplicate header names" });
+  }
+
+  // Step 3b: check column count at header level
+  if (headers.length !== expected.columnCount) {
     throw new ValidationError({
       source: data.source,
       expected: expected.columnCount,
-      actual: normalized.columns.length,
-      hint: "Column count mismatch — provider may have added or removed fields"
+      actual: headers.length,
       // Do not include raw column values — they may contain sensitive data
     });
   }
 
-  // 3. Check each row's column count (header may pass while rows drift)
+  // Step 3b: check per-row column count (header may pass while rows drift)
   for (const row of normalized.rows) {
     if (row.length !== expected.columnCount) {
       throw new ValidationError({ source: data.source, rowColumnCount: row.length });
     }
   }
 
-  // 4. After header-to-field mapping, check required field presence
-  for (const record of normalized.records) { // records = header-mapped objects
+  // Map headers to objects, then check field presence and parseability
+  const records = normalized.rows.map(row =>
+    Object.fromEntries(headers.map((h, i) => [h, row[i]]))
+  );
+
+  for (const record of records) {
     for (const field of expected.requiredFields) {
-      // Use hasOwn to avoid false positives from inherited properties
-      if (!Object.hasOwn(record, field)) {
+      // Step 3c: required field present
+      if (!Object.hasOwn(record, field) || record[field] == null || record[field] === "") {
         throw new ValidationError({ source: data.source, missingField: field });
+      }
+      // Step 3d: critical fields parse to expected type
+      if (expected.numericFields.includes(field) && isNaN(Number(record[field]))) {
+        throw new ValidationError({ source: data.source, unparsableField: field });
       }
     }
   }
 
-  return normalized.records; // safe to pass to business logic
+  return records; // safe to pass to business logic
 }
 ```
 
