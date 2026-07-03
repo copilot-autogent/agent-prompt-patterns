@@ -33,9 +33,9 @@ The cost of a missing negative test is asymmetric: it is paid in production, not
 
 ## Solution
 
-**Apply the "one positive, one negative" heuristic:** for every happy-path test case, ask "What would cause this function to fail, return an unexpected value, or throw?" Add that as an additional test case.
+**Apply the "one positive, one negative" heuristic:** for every tested behaviour, ask "What would cause this function to fail, return an unexpected value, or throw?" Add at least one test that exercises that failure mode.
 
-If no negative test can be written, document the reason explicitly (e.g., the function is a pure mathematical computation over a type-constrained input with no error path) — in a test-file comment or docstring co-located with the tests. This makes coverage decisions auditable rather than invisible.
+If no negative test can be written, document the reason explicitly — in a test-file comment or docstring co-located with the tests. Acceptable reasons include: the function is a pure computation with no error path and no external dependencies, and the language's type system provably prevents all invalid values at the call site (e.g., a narrowly-typed enum parameter in a compiled language). The anti-pattern to avoid: skipping negative tests because "the function is typed" when the type still admits values outside the intended range at runtime (most numeric and string types). This makes coverage decisions auditable rather than invisible.
 
 ### Negative test categories
 
@@ -50,7 +50,7 @@ If no negative test can be written, document the reason explicitly (e.g., the fu
 ### Process for testing existing code
 
 1. Read the function signature: what are the declared parameter types and their valid ranges?
-2. For each parameter, identify the valid range and add a test with a value just outside it.
+2. For each parameter, identify the valid range where applicable (numeric bounds, non-empty string, valid enum members, etc.) and add a test with a value outside that range. For parameters with no ordered range (booleans, opaque objects, enums with all members valid), focus on absent values and structurally invalid inputs instead.
 3. Read every branch that returns an error or throws — add a test that exercises each path.
 4. For every external resource access (file, API, DB call), add a test where the resource is unavailable or returns an error response.
 5. If the function has documented or implied preconditions, test what happens when each precondition is violated.
