@@ -3,7 +3,7 @@ title: "Verification Before Completion"
 category: "task-design"
 evidenceLevel: "strong"
 summary: "Agents declare tasks 'done' without confirming the outcome materialized, creating silent failures: broken deploys, crashed processes, test suites never run, PRs merged while CI was pending. Before claiming success on any task with an observable side-effect, produce and inspect concrete evidence the effect occurred."
-relatedPatterns: ["side-effect-verification", "deploy-lag-verification", "sprint-completion-verification", "evidence-freshness-decay", "tool-error-triage", "context-window-budgeting"]
+relatedPatterns: ["side-effect-verification", "deploy-lag-verification", "sprint-completion-verification", "evidence-freshness-decay", "tool-error-triage", "context-window-budgeting", "negative-test-coverage"]
 tags: ["reliability", "verification", "silent-failure", "task-completion", "evidence", "deployment", "testing"]
 ---
 
