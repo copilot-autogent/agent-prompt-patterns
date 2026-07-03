@@ -46,15 +46,16 @@ Use the **Tool Error Triage** pattern to classify the error type before deciding
 
 ```
 on rate_limit_error(e):
-  # Extract Retry-After if provided; use as floor for first wait
-  server_wait = parse_retry_after(e.headers)  # seconds; None if absent
-
   retry_count = 0
   delay = base_delay  # 1–2 s
 
-  while retry_count < max_retries:  # max_retries ≈ 5
-    wait_time = max(delay, server_wait or 0)
-    wait_time = wait_time * uniform(0.8, 1.2)   # ±20% jitter
+  while retry_count < max_retries:  # max_retries ≈ 5; loop runs 5 retry attempts
+    # Honor Retry-After if present; cap it at max_delay to bound wait time
+    server_wait = parse_retry_after(e.headers)  # seconds; None if absent
+    if server_wait is not None:
+      delay = min(max(delay, server_wait), max_delay)
+
+    wait_time = delay * uniform(0.8, 1.2)   # ±20% jitter applied after floor
     sleep(wait_time)
 
     result = retry_call()
@@ -66,13 +67,13 @@ on rate_limit_error(e):
       return tool_error_triage(result)
 
     delay = min(delay * 2, max_delay)  # cap at max_delay ≈ 60 s
-    server_wait = None  # only honor Retry-After on first retry
     retry_count += 1
 
-  # Escalate after max_retries consecutive 429s
+  # Escalate after max_retries consecutive 429s (original call + max_retries retries)
   escalate(
     error = last_error,
-    total_wait = sum of all delays,
+    total_wait_seconds = sum of all sleep() calls,
+    retry_count = max_retries,
     suggested_retry = "wait ~{max_delay} s before retrying manually"
   )
 ```
@@ -83,7 +84,7 @@ on rate_limit_error(e):
 |---|---|---|
 | `base_delay` | 1–2 s | Enough to let a per-second bucket reset; small enough to be invisible to users |
 | `jitter` | ±20% | Desynchronizes parallel agents sharing a token; reduces retry storms |
-| `multiplier` | 2× per retry | Standard exponential growth; reaches `max_delay` in 5–6 retries from a 1s base |
+| `multiplier` | 2× per retry | Standard exponential growth; reaches `max_delay` in 6 doublings from a 1s base — with `max_retries`=5 the cap acts as a safety ceiling for higher `base_delay` values rather than a value routinely reached |
 | `max_delay` | 60 s | Most per-minute quota windows fully reset within 60 s; longer waits rarely help |
 | `max_retries` | 5 | Bounds total wait time to ~2 min; beyond that, escalate rather than burn session time |
 
@@ -93,8 +94,8 @@ Before entering the back-off loop, classify the error. Back-off applies only to 
 
 | Error | Action |
 |---|---|
-| **429 / "rate limit exceeded" / "secondary rate limit"** | Exponential back-off → retry (this pattern) |
-| **403 (auth/forbidden)** | Abort immediately; escalate with token scope suggestion |
+| **429 / "rate limit exceeded" / "secondary rate limit"** | Exponential back-off → retry (this pattern). Note: some APIs (including older GitHub API versions) return 403 with a "secondary rate limit" body — check the response body text, not only the HTTP status, before aborting on a 403. |
+| **403 (auth/forbidden)** | Abort immediately; escalate with token scope suggestion. **Exception**: if the response body contains "secondary rate limit", treat as 429 and enter back-off (see above). |
 | **5xx (server error)** | Single retry after fixed 15–30 s delay; escalate if repeated |
 | **Timeout** | Single retry; abort if repeated |
 | **Any other 4xx** | Abort; fix the call |
@@ -106,7 +107,7 @@ When `max_retries` is exhausted, produce a structured escalation rather than an 
 ```
 Rate limit escalation after 5 consecutive 429s:
 - Last error: <exact error message>
-- Total wait time: <N> s across <N> retries
+- Total wait time: <total_wait_seconds> s across <retry_count> retries
 - API endpoint: <endpoint>
 - Suggested action: wait approximately 60 s, then retry manually
 - If this recurs: consider reducing burst call rate or splitting work across tokens
@@ -116,7 +117,7 @@ Include enough context for the user to act without re-running the agent from scr
 
 ### Parallel agent considerations
 
-When multiple agents share a single API token and one hits a 429, the others are likely close behind. If your orchestrator has a shared state mechanism (e.g., a persistent storage entry the agents can read/write), set a "rate-limited until T" flag when a 429 is received, and have other agents check it before making calls. Agents that see the flag wait until T passes before their next call. This prevents the retry storm that synchronized back-off creates when many agents start retrying at nearly the same time.
+When multiple agents share a single API token and one hits a 429, the others are likely close behind. If your orchestrator has a shared state mechanism (e.g., a persistent storage entry the agents can read/write), set a "rate-limited until T" flag when a 429 is received, keyed by token and API scope so unrelated traffic using different credentials is not stalled. Update the flag monotonically (`until = max(existing_T, new_T)`) so a racing agent cannot shorten an ongoing cooldown. Other agents check the flag before making calls and wait until T passes before their next call to the same endpoint. This prevents the retry storm that synchronized back-off creates when many agents start retrying at nearly the same time.
 
 If no shared flag mechanism exists, ensure each agent uses independently-seeded jitter. The ±20% jitter on each agent's delay schedule is sufficient to desynchronize retries for small agent pools (2–5 agents). For larger pools, increase jitter to ±50%.
 
@@ -132,13 +133,13 @@ If no shared flag mechanism exists, ensure each agent uses independently-seeded 
 
 ## Tradeoffs
 
-**Benefit**: Recovers from rate-limit conditions without human intervention. The total bounded wait time (~2 min across 5 retries) is shorter than the manual intervention loop (user reads error → waits → reruns agent). Escalation with explicit retry guidance ensures the user can act if the back-off is exhausted.
+**Benefit**: Recovers from rate-limit conditions without human intervention. The total bounded wait time across 5 retries is approximately 30–60 s (1+2+4+8+16 s with `base_delay`=1s; 2+4+8+16+32 s with `base_delay`=2s), which is typically shorter than the manual intervention loop (user reads error → waits → reruns agent). Escalation with explicit retry guidance ensures the user can act if the back-off is exhausted.
 
-**Cost**: Back-off retries add latency to sprint runs. A sprint that hits a 429 on retry 1 waits an additional 1–120 s (depending on retry count) before completing the affected call. For time-sensitive sprints, this is a real cost. Mitigation: callers can pass a `max_retries=1` override if latency is more important than recovery.
+**Cost**: Back-off retries add latency to sprint runs. A sprint that hits a 429 waits approximately 1–300 s additional (best case: single retry at `base_delay`≈1s; worst case: all 5 retries at `max_delay`=60s each) before completing the affected call. For time-sensitive sprints, this is a real cost. Mitigation: callers can pass a `max_retries=1` override if latency is more important than recovery.
 
 **Watch out for**:
 
-- **Misclassifying 403 as 429**: Some APIs return a 403 for "secondary rate limit exceeded" instead of 429. Check the error message body for "secondary rate limit" language, not just the HTTP status code, before entering back-off. Example: older GitHub API versions returned 403 with a "secondary rate limit" body for secondary rate limit hits.
+- **Misclassifying 403 as 429**: Some APIs return a 403 for "secondary rate limit exceeded" instead of 429. Check the error message body for "secondary rate limit" language, not just the HTTP status code, before entering back-off. This is also reflected in the decision table above. Example: older GitHub API versions returned 403 with a "secondary rate limit" body for secondary rate limit hits.
 - **`Retry-After` header drift**: Honor the `Retry-After` header if present, but only as a floor — some APIs set very conservative `Retry-After` values (e.g., 300 s) for secondary limits. Use `max(Retry-After, base_delay)` as the starting point and do not bypass `max_delay` for the header value.
 - **Write operation idempotency**: If a 429 occurs after the API accepted the write but before returning a success response, retrying may duplicate the write. Before retrying a write operation after a 429, check whether the resource was already created (e.g., re-fetch the PR list, comment list, or commit log). If already applied, skip the retry.
 - **Quota amplification across agents**: Jitter desynchronizes retries but does not reduce total call volume. If many agents are retrying, the aggregate call rate during the retry window may be high enough to re-trigger the limit. The shared-flag mechanism described in the solution section is the correct fix for large agent pools.
