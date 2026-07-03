@@ -48,17 +48,36 @@ Use the **Tool Error Triage** pattern to classify the error type before deciding
 on rate_limit_error(e):
   retry_count = 0
   delay = base_delay  # 1–2 s
+  last_error = e
 
-  while retry_count < max_retries:  # max_retries ≈ 5; loop runs 5 retry attempts
-    # Honor Retry-After if present; cap it at max_delay to bound wait time
-    server_wait = parse_retry_after(e.headers)  # seconds; None if absent
-    if server_wait is not None:
-      delay = min(max(delay, server_wait), max_delay)
+  while retry_count < max_retries:  # max_retries ≈ 5; escalates after 5 retry attempts
+    # Honor Retry-After from the most recent error response; handle both integer-seconds
+    # and HTTP-date formats. If server_wait exceeds max_delay, escalate immediately
+    # rather than ignoring it — violating a long cooldown re-triggers the limit.
+    server_wait = parse_retry_after(last_error.headers)  # normalized to seconds; None if absent
+    if server_wait is not None and server_wait > max_delay:
+      escalate(
+        reason = "Retry-After ({server_wait}s) exceeds max_delay — manual retry required",
+        error = last_error
+      )
+      return
 
-    wait_time = delay * uniform(0.8, 1.2)   # ±20% jitter applied after floor
+    effective_delay = max(delay, server_wait or 0)
+    # Apply jitter only above the server-mandated floor to avoid sleeping below it
+    wait_time = effective_delay + (delay * uniform(-0.2, 0.2))
+    wait_time = max(wait_time, server_wait or 0)  # re-enforce floor after jitter
     sleep(wait_time)
 
+    # For write operations: check idempotency before retrying to prevent duplication
+    if is_write_operation(last_error):
+      if already_applied():  # e.g., re-fetch the resource and check for existence
+        return  # write went through before the error was returned
+      if not is_idempotent(last_error):
+        escalate("Non-idempotent write rate-limited — cannot safely auto-retry; retry manually")
+        return
+
     result = retry_call()
+    last_error = result
     if result.ok:
       return result
 
@@ -69,7 +88,7 @@ on rate_limit_error(e):
     delay = min(delay * 2, max_delay)  # cap at max_delay ≈ 60 s
     retry_count += 1
 
-  # Escalate after max_retries consecutive 429s (original call + max_retries retries)
+  # Escalate after max_retries retry attempts (not counting the original failing call)
   escalate(
     error = last_error,
     total_wait_seconds = sum of all sleep() calls,
@@ -102,10 +121,10 @@ Before entering the back-off loop, classify the error. Back-off applies only to 
 
 ### Escalation message format
 
-When `max_retries` is exhausted, produce a structured escalation rather than an unformatted error:
+When `max_retries` is exhausted (after 5 retry attempts; the original failing call is not counted), produce a structured escalation rather than an unformatted error:
 
 ```
-Rate limit escalation after 5 consecutive 429s:
+Rate limit escalation after {max_retries} retry attempts:
 - Last error: <exact error message>
 - Total wait time: <total_wait_seconds> s across <retry_count> retries
 - API endpoint: <endpoint>
@@ -117,7 +136,7 @@ Include enough context for the user to act without re-running the agent from scr
 
 ### Parallel agent considerations
 
-When multiple agents share a single API token and one hits a 429, the others are likely close behind. If your orchestrator has a shared state mechanism (e.g., a persistent storage entry the agents can read/write), set a "rate-limited until T" flag when a 429 is received, keyed by token and API scope so unrelated traffic using different credentials is not stalled. Update the flag monotonically (`until = max(existing_T, new_T)`) so a racing agent cannot shorten an ongoing cooldown. Other agents check the flag before making calls and wait until T passes before their next call to the same endpoint. This prevents the retry storm that synchronized back-off creates when many agents start retrying at nearly the same time.
+When multiple agents share a single API token and one hits a 429, the others are likely close behind. If your orchestrator has a shared state mechanism (e.g., a persistent storage entry the agents can read/write), set a "rate-limited until T" flag when a 429 is received, keyed by an identifier for the token and API scope (not the raw token — use a hash or alias to avoid credential exposure in shared state) so unrelated traffic using different credentials is not stalled. Update the flag monotonically (`until = max(existing_T, new_T)`) so a racing agent cannot shorten an ongoing cooldown. Note that many secondary rate limits are token-wide or mutation-class-wide rather than endpoint-scoped; scope the flag accordingly (e.g., by `{token_alias}:{mutation_class}` rather than `{token_alias}:{specific_endpoint}`). Other agents check the flag before making calls and wait until T passes before their next call. This prevents the retry storm that synchronized back-off creates when many agents start retrying at nearly the same time.
 
 If no shared flag mechanism exists, ensure each agent uses independently-seeded jitter. The ±20% jitter on each agent's delay schedule is sufficient to desynchronize retries for small agent pools (2–5 agents). For larger pools, increase jitter to ±50%.
 
@@ -141,7 +160,7 @@ If no shared flag mechanism exists, ensure each agent uses independently-seeded 
 
 - **Misclassifying 403 as 429**: Some APIs return a 403 for "secondary rate limit exceeded" instead of 429. Check the error message body for "secondary rate limit" language, not just the HTTP status code, before entering back-off. This is also reflected in the decision table above. Example: older GitHub API versions returned 403 with a "secondary rate limit" body for secondary rate limit hits.
 - **`Retry-After` header drift**: Honor the `Retry-After` header if present, but only as a floor — some APIs set very conservative `Retry-After` values (e.g., 300 s) for secondary limits. Use `max(Retry-After, base_delay)` as the starting point and do not bypass `max_delay` for the header value.
-- **Write operation idempotency**: If a 429 occurs after the API accepted the write but before returning a success response, retrying may duplicate the write. Before retrying a write operation after a 429, check whether the resource was already created (e.g., re-fetch the PR list, comment list, or commit log). If already applied, skip the retry.
+- **Write operation idempotency**: If a 429 occurs after the API accepted the write but before returning a success response, retrying may duplicate the write. The pseudocode above includes an idempotency guard before each retry: re-fetch the resource and check whether it was already created before re-submitting. For writes with no reliable lookup key (e.g., posting a comment that could appear multiple times), escalate rather than retry.
 - **Quota amplification across agents**: Jitter desynchronizes retries but does not reduce total call volume. If many agents are retrying, the aggregate call rate during the retry window may be high enough to re-trigger the limit. The shared-flag mechanism described in the solution section is the correct fix for large agent pools.
 - **Exponential back-off on non-rate-limit transients**: Do not apply this pattern's exponential schedule to 5xx or timeout errors. 5xx errors require a flat retry with a single modest delay; they do not benefit from exponential growth. Mixing the two schedules produces unnecessarily long waits for server errors that would have cleared on a 15-second retry.
 
