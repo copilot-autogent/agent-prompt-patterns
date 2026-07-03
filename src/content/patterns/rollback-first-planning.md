@@ -2,7 +2,7 @@
 title: "Rollback-First Planning"
 category: "agent-autonomy"
 evidenceLevel: "strong"
-summary: "Agents execute irreversible operations — database migrations, file deletions, deploy pipeline triggers — without first establishing how to undo them. When execution fails mid-way, there is no pre-defined recovery path. Rollback-First Planning requires agents to define, verify, and document a rollback procedure before executing any irreversible action. If a rollback cannot be verified before execution begins, the action must not proceed."
+summary: "Before executing any irreversible action, define and verify a rollback procedure. If the rollback cannot be verified before execution begins, the action must not proceed."
 relatedPatterns: ["uncertainty-gated-irreversible-action", "dead-sprint-recovery", "side-effect-verification", "pre-commit-planning-phase"]
 tags: ["safety", "rollback", "irreversible-actions", "planning", "migrations", "production-ops", "failure-recovery", "deploy"]
 ---
@@ -69,10 +69,10 @@ For multi-stage actions, write a rollback entry for each stage: "if step N fails
 
 Before executing the forward action, confirm that every resource named in the rollback plan *exists, is accessible, and corresponds to the current pre-change system state*:
 
-- The rollback script is syntactically valid and targets the correct schema version. Use a lint tool (`sqlfluff lint V002__down.sql`) or test execution against a staging schema (`psql --single-transaction -f V002__down.sql staging_db` — the transaction auto-rolls back if `ON_ERROR_STOP` triggers, or can be committed to verify idempotency). Note: `\i` is a psql interactive meta-command and cannot be used inside `-c`; always use `-f filepath` for file-based migration verification.
+- The rollback script is syntactically valid and targets the correct schema version. Use a lint tool (`sqlfluff lint V002__down.sql`) or test against a staging schema: `psql -v ON_ERROR_STOP=1 --single-transaction -f V002__down.sql staging_db` — with `ON_ERROR_STOP=1`, any SQL error rolls back the transaction. Note: `\i` is a psql interactive meta-command and cannot be used inside `-c`; always use `-f filepath` for file-based migration verification.
 - The backup file is present, non-empty, and was created **after the last known-good state and before this operation** (verify the timestamp: `aws s3 ls s3://app-snapshots/backup-2026-07-03-pre-migration --human-readable`)
 - The previous release tag exists in the deploy system and is deployable. For multi-revision deployments (blue/green, canary, multi-region), verify the rollback target is compatible with **all currently active revisions**, not just the primary production slot.
-- For branch reset or force operations: the pre-operation ref must be durably preserved — push an explicit tag or create a named backup branch (`git tag pre-op-backup-<timestamp> && git push origin pre-op-backup-<timestamp>`), since `git reflog` is local and garbage-collectable. Verify force-push permission via the platform API (e.g., `gh api /repos/OWNER/REPO/branches/BRANCH/protection`), not `git remote show origin`, which does not report server-side protection rules.
+- For branch reset or force operations: the pre-operation ref must be durably preserved — push an explicit tag or create a named backup branch (`git tag pre-op-backup-<timestamp> && git push origin pre-op-backup-<timestamp>`), since `git reflog` is local and garbage-collectable. Verify force-push permission via the platform API; on GitHub, both branch protection rules (`gh api /repos/OWNER/REPO/branches/BRANCH/protection`) and organization/repository rulesets may independently block force-push — check all layers before concluding that the operation is permitted.
 
 **If any rollback resource cannot be verified, the forward action must not proceed.** Create the missing resource first (take the backup, write the down migration, pin the release), then re-verify before proceeding. If creating the missing resource is infeasible within the operation's time budget, escalate rather than proceeding without a verified rollback.
 
@@ -82,11 +82,11 @@ Proceed with the original action only after the rollback plan is written and all
 
 ### Step 5: On failure — execute the rollback plan, not improvisation
 
-If the forward action fails, execute the pre-defined rollback steps exactly as written. Deviate only if a specific step proves infeasible, and document the deviation explicitly:
+If the forward action fails, execute the pre-defined rollback steps exactly as written. If a specific step proves infeasible, do not invent a replacement step on the spot — instead, stop, document why the step failed and what state the system is in, and escalate:
 
-> "Step 2 failed: backup file was corrupted (0 bytes). Escalating to human: system is in partial-migration state, steps 1–2 of 5 applied, no automated rollback available. Last known-good snapshot: `backup-2026-07-02`."
+> "Step 2 failed: backup file was corrupted (0 bytes). Cannot proceed with automated rollback. System is in partial-migration state, steps 1–2 of 5 applied. Last known-good snapshot: `backup-2026-07-02`. Manual intervention required."
 
-Never improvise new rollback steps from scratch under failure conditions. The pre-failure context is better than the post-failure context for writing recovery procedures.
+Escalation with a clear state description is safer than an improvised recovery step that may worsen the partial state.
 
 ## Protocol
 
