@@ -4,7 +4,7 @@ category: "agent-autonomy"
 evidenceLevel: "moderate"
 summary: "Agents encountering unexpected behaviour often take multiple simultaneous fix actions without first forming an explicit model of why the failure occurs. This produces false fixes, confounded root causes, and abandoned hypotheses. Before any debugging action, state an explicit, falsifiable hypothesis, execute only the minimum action to test it, and update the hypothesis before acting again."
 relatedPatterns: ["empirical-validation-loop", "constraint-falsification", "tool-error-triage", "evidence-freshness-decay"]
-tags: ["debugging", "hypothesis", "falsification", "root-cause", "diagnosis", "scientific-method", "one-variable-at-a-time"]
+tags: ["debugging", "hypothesis", "falsification", "root-cause", "diagnosis", "scientific-method", "one-variable-at-a-time", "tier:2-standard"]
 ---
 
 ## Problem
@@ -35,8 +35,9 @@ It is most valuable when a fast guess-and-try loop is *tempting* — the failure
 Apply this six-step cycle for every debugging action:
 
 ```
-1. OBSERVE    — record the exact failure: error message, stack trace, inputs, outputs.
-                Do not paraphrase. Copy the exact text.
+1. OBSERVE    — record the failure precisely: error message, stack trace, inputs, outputs.
+                Do not paraphrase. Capture the exact text, redacting any secrets or PII
+                before recording or propagating the observation.
 
 2. HYPOTHESIZE — state explicitly:
                 "I believe the root cause is X, because Y. This predicts Z."
@@ -48,7 +49,8 @@ Apply this six-step cycle for every debugging action:
 4. TEST       — execute only that change or observation. Nothing else.
 
 5. EVALUATE   — did the result match prediction Z?
-                YES → hypothesis confirmed; apply fix, then run full test suite.
+                YES → hypothesis confirmed; re-run the minimal reproducer to confirm
+                      the fix holds in isolation, then run the full test suite.
                 NO  → hypothesis falsified; record what you learned;
                       return to step 2 with the updated model.
 
@@ -67,7 +69,7 @@ Apply this six-step cycle for every debugging action:
 
 **State the prediction before running**: write the hypothesis and its prediction *before* executing the test, not after seeing the result. Post-hoc rationalisation ("I suspected that all along") is a major source of anchoring errors in debugging sessions.
 
-**Hypothesis budget of 3**: if three hypotheses have been falsified without resolution, stop and re-read the original error message from scratch. Budget exhaustion is a signal that the initial observation was incomplete or misread — return to step 1, not to a fourth hypothesis.
+**Hypothesis budget of 3 (heuristic)**: if three hypotheses have been falsified without yielding clear new evidence, treat that as a signal to re-read the original error message from scratch. This is a heuristic trigger for re-observation, not an unconditional stop — if each cycle is producing materially new information, continue past three. The goal is to break anchoring loops, not to cap genuine progress.
 
 ## Anti-patterns
 
@@ -89,7 +91,7 @@ Apply this six-step cycle for every debugging action:
 
 **Sprint failure-recovery sessions**: multiple sprint postmortems in the autogent system show that root-cause ambiguity was the primary blocker when debugging stalled. In the documented cases, the stall was caused by simultaneous changes (e.g., changing config + code + dependency at once) that masked the actual root cause. Explicit hypothesis tracking was introduced as a remediation in the `when-debugging` playbook section.
 
-**Anchoring trap**: the `when-debugging` playbook section contains an explicit "empirical anchoring trap" warning — agents anchor on the first plausible hypothesis and do not falsify it. The hypothesis budget rule (≤3 before re-reading the original error) was derived from observed debugging sessions where agents spent 6+ cycles on variations of the same incorrect initial hypothesis.
+**Anchoring trap**: the `when-debugging` playbook section contains an explicit "empirical anchoring trap" warning — agents anchor on the first plausible hypothesis and do not falsify it. The hypothesis budget heuristic (re-observe after 3 falsified hypotheses without new evidence) was derived from observed debugging sessions where agents spent 6+ cycles on variations of the same incorrect initial hypothesis.
 
 ## Related Patterns
 
