@@ -3,7 +3,7 @@ title: "Verification Before Completion"
 category: "task-design"
 evidenceLevel: "strong"
 summary: "Agents declare tasks 'done' without confirming the outcome materialized, creating silent failures: broken deploys, crashed processes, test suites never run, PRs merged while CI was pending. Before claiming success on any task with an observable side-effect, produce and inspect concrete evidence the effect occurred."
-relatedPatterns: ["side-effect-verification", "deploy-lag-verification", "sprint-completion-verification", "evidence-freshness-decay", "tool-error-triage", "context-window-budgeting"]
+relatedPatterns: ["side-effect-verification", "deploy-lag-verification", "sprint-completion-verification", "evidence-freshness-decay", "tool-error-triage", "context-window-budgeting", "negative-test-coverage"]
 tags: ["reliability", "verification", "silent-failure", "task-completion", "evidence", "deployment", "testing"]
 ---
 
@@ -106,3 +106,4 @@ Multiple incidents in an autonomous multi-agent production system provide direct
 - **[Evidence Freshness Decay](/agent-prompt-patterns/patterns/evidence-freshness-decay)** — verification evidence has a shelf life; a health check that passed 10 minutes ago is weaker evidence than one that passed 10 seconds ago; plan verification timing accordingly
 - **[Tool Error Triage](/agent-prompt-patterns/patterns/tool-error-triage)** — when verification fails, the failure itself must be triaged before retrying the original operation; a failed health check may mean the deploy failed OR the health endpoint is temporarily unavailable
 - **[Context Window Budgeting](/agent-prompt-patterns/patterns/context-window-budgeting)** — verification steps consume tool-call budget; budget-constrained sessions must prioritize verification for high-stakes operations and skip it for low-stakes idempotent reads
+- **[Negative Test Coverage](/agent-prompt-patterns/patterns/negative-test-coverage)** — this pattern checks *that* tests pass; negative-test-coverage ensures the tests are worth passing by explicitly covering error paths, invalid inputs, and boundary conditions
