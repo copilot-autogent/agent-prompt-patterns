@@ -2,7 +2,7 @@
 title: "Hypothesis-Before-Action"
 category: "agent-autonomy"
 evidenceLevel: "moderate"
-summary: "Agents encountering unexpected behaviour often take multiple simultaneous fix actions without first forming an explicit model of why the failure occurs. This produces false fixes, confounded root causes, and abandoned hypotheses. Before any debugging action, state an explicit, falsifiable hypothesis, execute only the minimum action to test it, and update the hypothesis before acting again."
+summary: "Agents encountering unexpected behaviour often take multiple simultaneous fix actions without first forming an explicit model of why the failure occurs. This produces false fixes, confounded root causes, and abandoned hypotheses. Before any *intervention*, state an explicit, falsifiable hypothesis, execute only the minimum action to test it, and update the hypothesis before acting again. Observation (gathering evidence) is not an intervention and always precedes the hypothesis."
 relatedPatterns: ["empirical-validation-loop", "constraint-falsification", "tool-error-triage", "evidence-freshness-decay"]
 tags: ["debugging", "hypothesis", "falsification", "root-cause", "diagnosis", "scientific-method", "one-variable-at-a-time", "tier:2-standard"]
 ---
@@ -32,25 +32,31 @@ It is most valuable when a fast guess-and-try loop is *tempting* — the failure
 
 ### Protocol
 
-Apply this six-step cycle for every debugging action:
+The six steps fall into two phases: **evidence gathering** (OBSERVE is passive — no system state changes), then **hypothesis-driven intervention** (HYPOTHESIZE through DOCUMENT). The hypothesis constraint applies to steps 2–6, not to step 1.
 
 ```
-1. OBSERVE    — record the failure precisely: error message, stack trace, inputs, outputs.
-                Do not paraphrase. Capture the exact text, redacting any secrets or PII
-                before recording or propagating the observation.
+1. OBSERVE    — gather evidence: error message, stack trace, inputs, outputs.
+                Capture verbatim locally. When recording or sharing, redact any
+                secrets or PII from the captured text before propagating.
 
 2. HYPOTHESIZE — state explicitly:
                 "I believe the root cause is X, because Y. This predicts Z."
                 Z must be an observable, falsifiable outcome.
+                (This is the first intervention gate: no changes before this step.)
 
 3. MINIMISE   — identify the single smallest change or observation that would
-                confirm or falsify Z. One variable only.
+                confirm or falsify Z. Prefer read-only probes; only introduce
+                a state change when a probe cannot answer the question.
 
-4. TEST       — execute only that change or observation. Nothing else.
+4. TEST       — execute only that change or observation. Where a minimal test
+                requires a coupled edit (e.g. a code change that must compile to
+                be runnable), treat the coupled bundle as one logical variable —
+                keep the bundle as small as possible and document its scope.
 
 5. EVALUATE   — did the result match prediction Z?
                 YES → hypothesis confirmed; re-run the minimal reproducer to confirm
-                      the fix holds in isolation, then run the full test suite.
+                      the fix holds in isolation, then run your full validation
+                      suite (test suite, pipeline check, or equivalent for the domain).
                 NO  → hypothesis falsified; record what you learned;
                       return to step 2 with the updated model.
 
@@ -63,7 +69,7 @@ Apply this six-step cycle for every debugging action:
 
 ### Rules
 
-**One variable per test**: never change two things between observations. If two changes are needed, make them in separate steps with a test run between each. Two simultaneous changes make it impossible to know which one caused the observed outcome.
+**One logical variable per test**: do not introduce independent changes between observations. Where a minimal test requires a coupled bundle of changes (e.g., a refactor that must compile as a unit), treat the bundle as one variable, keep it as small as possible, and document what it contains. The goal is interpretability, not an absolute prohibition on multi-line edits.
 
 **Falsification over confirmation**: prefer tests that would *disprove* your hypothesis over ones that would merely support it. A test that can only confirm is weak evidence; a test that would disprove but does not is strong evidence.
 
@@ -73,7 +79,7 @@ Apply this six-step cycle for every debugging action:
 
 ## Anti-patterns
 
-**Shotgun fixing**: changing multiple things at once and calling it "fixed" when tests pass. This produces latent bugs, makes regressions harder to diagnose, and violates the one-variable rule.
+**Shotgun fixing**: changing multiple things at once and calling it "fixed" when tests pass. This produces latent bugs, makes regressions harder to diagnose, and defeats the one-logical-variable rule.
 
 **Predictionless trying**: executing a change without a stated prediction of what it would confirm or refute. "Let me try X and see what happens" is not a hypothesis — it produces data with no interpretive frame.
 
@@ -81,7 +87,7 @@ Apply this six-step cycle for every debugging action:
 
 **Post-hoc root cause**: declaring root cause after an ad-hoc change produced a passing test, without tracing *why* the change fixed the failure. Build success is not proof of root cause.
 
-**Parallel fixes in a single commit**: bundling multiple speculative changes in one commit to "save time." This prevents bisection and makes the fix non-reproducible in isolation.
+**Parallel fixes in a single commit**: bundling multiple independent speculative changes in one commit to "save time." This prevents bisection and makes the fix non-reproducible in isolation.
 
 ## Evidence
 
