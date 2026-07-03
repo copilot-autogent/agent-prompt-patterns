@@ -45,45 +45,54 @@ Use the **Tool Error Triage** pattern to classify the error type before deciding
 ### Algorithm
 
 ```
-on rate_limit_error(e):
+# is_write_op and is_idempotent_write must be determined from the original request
+# (method + endpoint), not from the error object, before entering the back-off loop.
+on rate_limit_error(original_request, e):
   retry_count = 0
   delay = base_delay  # 1–2 s
   last_error = e
+  total_wait = 0
 
   while retry_count < max_retries:  # max_retries ≈ 5; escalates after 5 retry attempts
-    # Honor Retry-After from the most recent error response; handle both integer-seconds
-    # and HTTP-date formats. If server_wait exceeds max_delay, escalate immediately
-    # rather than ignoring it — violating a long cooldown re-triggers the limit.
+    # Honor Retry-After from the most recent 429 response; handle both integer-seconds
+    # and HTTP-date formats. If server_wait exceeds max_delay on ANY iteration,
+    # escalate immediately — violating a long cooldown re-triggers the limit.
     server_wait = parse_retry_after(last_error.headers)  # normalized to seconds; None if absent
     if server_wait is not None and server_wait > max_delay:
       escalate(
         reason = "Retry-After ({server_wait}s) exceeds max_delay — manual retry required",
-        error = last_error
+        error = last_error,
+        total_wait_seconds = total_wait
       )
       return
 
+    # Use effective_delay as the jitter base so desynchronization is meaningful
+    # even when Retry-After dominates; enforce base_delay as a floor post-jitter.
     effective_delay = max(delay, server_wait or 0)
-    # Apply jitter only above the server-mandated floor to avoid sleeping below it
-    wait_time = effective_delay + (delay * uniform(-0.2, 0.2))
-    wait_time = max(wait_time, server_wait or 0)  # re-enforce floor after jitter
+    jitter_offset = effective_delay * uniform(-0.2, 0.2)
+    wait_time = max(effective_delay + jitter_offset, max(delay, server_wait or 0))
     sleep(wait_time)
+    total_wait += wait_time
 
-    # For write operations: check idempotency before retrying to prevent duplication
-    if is_write_operation(last_error):
-      if already_applied():  # e.g., re-fetch the resource and check for existence
-        return  # write went through before the error was returned
-      if not is_idempotent(last_error):
-        escalate("Non-idempotent write rate-limited — cannot safely auto-retry; retry manually")
+    # For write operations: guard idempotency before retrying. Derive write/idempotency
+    # semantics from the original request (method + endpoint), not the error object.
+    if original_request.is_write:
+      if already_applied(original_request):  # re-fetch resource to confirm
+        return  # write committed before error was returned
+      if not original_request.is_idempotent:
+        escalate("Non-idempotent write rate-limited — cannot safely auto-retry; retry manually",
+                 total_wait_seconds = total_wait)
         return
 
-    result = retry_call()
-    last_error = result
+    result = retry_call(original_request)
     if result.ok:
       return result
 
+    last_error = result  # update only after checking result.ok
+
     if result.status != 429:
-      # Error type changed — hand off to Tool Error Triage
-      return tool_error_triage(result)
+      # Error type changed — hand off to Tool Error Triage with aggregate context
+      return tool_error_triage(result, context = {"prior_429s": retry_count, "total_wait": total_wait})
 
     delay = min(delay * 2, max_delay)  # cap at max_delay ≈ 60 s
     retry_count += 1
@@ -91,7 +100,7 @@ on rate_limit_error(e):
   # Escalate after max_retries retry attempts (not counting the original failing call)
   escalate(
     error = last_error,
-    total_wait_seconds = sum of all sleep() calls,
+    total_wait_seconds = total_wait,
     retry_count = max_retries,
     suggested_retry = "wait ~{max_delay} s before retrying manually"
   )
@@ -103,7 +112,7 @@ on rate_limit_error(e):
 |---|---|---|
 | `base_delay` | 1–2 s | Enough to let a per-second bucket reset; small enough to be invisible to users |
 | `jitter` | ±20% | Desynchronizes parallel agents sharing a token; reduces retry storms |
-| `multiplier` | 2× per retry | Standard exponential growth; reaches `max_delay` in 6 doublings from a 1s base — with `max_retries`=5 the cap acts as a safety ceiling for higher `base_delay` values rather than a value routinely reached |
+| `multiplier` | 2× per retry | Standard exponential growth; with `base_delay`=1s and `max_retries`=5, the delay sequence is 1→2→4→8→16→32 s — the 60s cap acts as a safety ceiling for `base_delay` > 2 s or future parameter increases, not a value reached in the default configuration |
 | `max_delay` | 60 s | Most per-minute quota windows fully reset within 60 s; longer waits rarely help |
 | `max_retries` | 5 | Bounds total wait time to ~2 min; beyond that, escalate rather than burn session time |
 
@@ -136,7 +145,7 @@ Include enough context for the user to act without re-running the agent from scr
 
 ### Parallel agent considerations
 
-When multiple agents share a single API token and one hits a 429, the others are likely close behind. If your orchestrator has a shared state mechanism (e.g., a persistent storage entry the agents can read/write), set a "rate-limited until T" flag when a 429 is received, keyed by an identifier for the token and API scope (not the raw token — use a hash or alias to avoid credential exposure in shared state) so unrelated traffic using different credentials is not stalled. Update the flag monotonically (`until = max(existing_T, new_T)`) so a racing agent cannot shorten an ongoing cooldown. Note that many secondary rate limits are token-wide or mutation-class-wide rather than endpoint-scoped; scope the flag accordingly (e.g., by `{token_alias}:{mutation_class}` rather than `{token_alias}:{specific_endpoint}`). Other agents check the flag before making calls and wait until T passes before their next call. This prevents the retry storm that synchronized back-off creates when many agents start retrying at nearly the same time.
+When multiple agents share a single API token and one hits a 429, the others are likely close behind. If your orchestrator has a shared state mechanism (e.g., a persistent storage entry the agents can read/write), set a "rate-limited until T" flag when a 429 is received, keyed by an identifier for the token and API scope (not the raw token — use a hash or alias to avoid credential exposure in shared state) so unrelated traffic using different credentials is not stalled. Update the flag monotonically (`until = max(existing_T, new_T)`) so a racing agent cannot shorten an ongoing cooldown. Note that many secondary rate limits are token-wide or mutation-class-wide rather than endpoint-scoped; scope the flag accordingly (e.g., by `{token_alias}:{mutation_class}` rather than `{token_alias}:{specific_endpoint}`). When T expires, add a per-agent random spread (e.g., `sleep(uniform(0, 5))`) before resuming calls — without it, all waiting agents resume at the same instant and re-trigger the limit immediately. This prevents the retry storm that synchronized back-off creates when many agents start retrying at nearly the same time.
 
 If no shared flag mechanism exists, ensure each agent uses independently-seeded jitter. The ±20% jitter on each agent's delay schedule is sufficient to desynchronize retries for small agent pools (2–5 agents). For larger pools, increase jitter to ±50%.
 
@@ -152,9 +161,9 @@ If no shared flag mechanism exists, ensure each agent uses independently-seeded 
 
 ## Tradeoffs
 
-**Benefit**: Recovers from rate-limit conditions without human intervention. The total bounded wait time across 5 retries is approximately 30–60 s (1+2+4+8+16 s with `base_delay`=1s; 2+4+8+16+32 s with `base_delay`=2s), which is typically shorter than the manual intervention loop (user reads error → waits → reruns agent). Escalation with explicit retry guidance ensures the user can act if the back-off is exhausted.
+**Benefit**: Recovers from rate-limit conditions without human intervention. With default parameters (`base_delay`=1s, `max_retries`=5), the delay sequence is 1+2+4+8+16+32 s = ~63 s total wait in the worst case before escalation — typically shorter than the manual intervention loop (user reads error → waits → reruns agent). Escalation with explicit retry guidance ensures the user can act if the back-off is exhausted.
 
-**Cost**: Back-off retries add latency to sprint runs. A sprint that hits a 429 waits approximately 1–300 s additional (best case: single retry at `base_delay`≈1s; worst case: all 5 retries at `max_delay`=60s each) before completing the affected call. For time-sensitive sprints, this is a real cost. Mitigation: callers can pass a `max_retries=1` override if latency is more important than recovery.
+**Cost**: Back-off retries add latency to sprint runs. With default parameters (`base_delay`=1s, `max_retries`=5), worst-case total wait before escalation is ~63 s. For time-sensitive sprints, this is a real cost. Mitigation: callers can pass a `max_retries=1` override if latency is more important than recovery.
 
 **Watch out for**:
 
