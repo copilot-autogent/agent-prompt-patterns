@@ -32,7 +32,7 @@ If the answer is **no**, Rollback-First Planning is mandatory. If the answer is 
 **Scope triggers — apply this pattern for:**
 
 - Schema migrations with no `down` migration defined (forward-only migrations)
-- File batch deletions without a local copy, git stash, or backup present
+- File batch deletions without a durable copy or backup present (note: a local `git stash` is NOT a durable rollback artifact — it is ephemeral, local to one machine, and garbage-collectable)
 - Deploy pipelines with no instant-rollback mechanism (e.g., no previous release pinned for re-deploy)
 - Any operation touching production data (records, credentials, access control rules)
 - Branch resets or force operations on shared branches
@@ -69,12 +69,12 @@ For multi-stage actions, write a rollback entry for each stage: "if step N fails
 
 Before executing the forward action, confirm that every resource named in the rollback plan *exists, is accessible, and corresponds to the current pre-change system state*:
 
-- The rollback script is syntactically valid and targets the correct schema version. Use the tool's own lint/validate command (e.g., `sqlfluff lint V002__down.sql`), or test against a staging schema with a transaction that is rolled back: `psql -c 'BEGIN; \i V002__down.sql; ROLLBACK;'`. Do not rely on a non-existent `--dry-run` flag.
+- The rollback script is syntactically valid and targets the correct schema version. Use a lint tool (`sqlfluff lint V002__down.sql`) or test execution against a staging schema (`psql --single-transaction -f V002__down.sql staging_db` — the transaction auto-rolls back if `ON_ERROR_STOP` triggers, or can be committed to verify idempotency). Note: `\i` is a psql interactive meta-command and cannot be used inside `-c`; always use `-f filepath` for file-based migration verification.
 - The backup file is present, non-empty, and was created **after the last known-good state and before this operation** (verify the timestamp: `aws s3 ls s3://app-snapshots/backup-2026-07-03-pre-migration --human-readable`)
-- The previous release tag exists in the deploy system, is deployable, and matches the version **currently running in production** — not an older pinned tag
-- For branch reset or force operations: the pre-operation ref is preserved (e.g., in `git reflog` or as an explicit tag/branch), and force-push is permitted on the target branch (check branch protection rules via the API or `git remote show origin`)
+- The previous release tag exists in the deploy system and is deployable. For multi-revision deployments (blue/green, canary, multi-region), verify the rollback target is compatible with **all currently active revisions**, not just the primary production slot.
+- For branch reset or force operations: the pre-operation ref must be durably preserved — push an explicit tag or create a named backup branch (`git tag pre-op-backup-<timestamp> && git push origin pre-op-backup-<timestamp>`), since `git reflog` is local and garbage-collectable. Verify force-push permission via the platform API (e.g., `gh api /repos/OWNER/REPO/branches/BRANCH/protection`), not `git remote show origin`, which does not report server-side protection rules.
 
-**If any rollback resource cannot be verified, the forward action must not proceed.** Create the missing resource first (take the backup, write the down migration, pin the release), then re-verify before proceeding.
+**If any rollback resource cannot be verified, the forward action must not proceed.** Create the missing resource first (take the backup, write the down migration, pin the release), then re-verify before proceeding. If creating the missing resource is infeasible within the operation's time budget, escalate rather than proceeding without a verified rollback.
 
 ### Step 4: Execute forward
 
@@ -94,14 +94,14 @@ The OBSERVE → HYPOTHESIZE → MINIMISE → TEST → EVALUATE → DOCUMENT loop
 
 1. **OBSERVE** — inspect current system state (backup presence, migration status, branch state)
 2. **HYPOTHESIZE** — identify what could fail and at which step
-3. **MINIMISE** — reduce the forward action scope if any rollback resource is missing (stage in smaller steps with checkpoints)
-4. **TEST** — run dry-run or syntax-check versions of the rollback commands
-5. **EVALUATE** — confirm all rollback resources verified; block if not
+3. **MINIMISE** — reduce the forward action scope to smaller atomic steps with intermediate checkpoints, each with its own rollback plan, so that partial failure is contained to one step's scope
+4. **TEST** — run syntax-check or staging-only versions of the rollback commands to confirm they execute without error
+5. **EVALUATE** — confirm all rollback resources verified for all stages; block if any are missing
 6. **DOCUMENT** — write the verified rollback plan into the working context before proceeding
 
 ## Anti-patterns
 
-**"I can always undo it with `git reset --hard`"** — without verifying that the target SHA exists, the branch is unprotected, and the working tree state has been stashed or is otherwise recoverable. This statement is commonly false for shared branches and forward-only migrations.
+**"I can always undo it with `git reset --hard`"** — without verifying that the target SHA exists, the branch allows force operations, and the working tree state has been stashed or is otherwise recoverable. This statement is commonly false for shared branches and forward-only migrations.
 
 **Planning rollback after the action has already started** — rollback plans written under failure conditions are based on incomplete post-failure context. The verification step (Step 3) becomes impossible once the forward action has altered the system state.
 
@@ -112,6 +112,8 @@ The OBSERVE → HYPOTHESIZE → MINIMISE → TEST → EVALUATE → DOCUMENT loop
 **Verbal rollback plans** — rollback procedures must be written, not held in working memory. A verbal plan ("I'll just revert the commit") is lost when context is exhausted or the session ends mid-failure.
 
 **Verifying existence without verifying version** — a backup that passes an existence check may predate the current schema version and be useless for restoring from the current state. Always verify that rollback resources correspond to the *current* pre-change state, not merely that they exist.
+
+**Treating a local `git stash` or `git reflog` as a durable rollback artifact** — both are local and garbage-collectable. They are not available on other machines, after a `git gc`, or in a new clone. Durable rollback artifacts must be pushed to a remote (backup branch, tag, S3 object, database dump).
 
 ## Evidence
 
@@ -127,4 +129,4 @@ The OBSERVE → HYPOTHESIZE → MINIMISE → TEST → EVALUATE → DOCUMENT loop
 
 **False negatives on "verified" resources**: A backup that passes an existence check (`aws s3 ls`) may still be corrupted, incomplete, or too old to be useful. Verification depth must be calibrated to the operation's risk level: for high-risk operations, a restore dry-run is warranted; for moderate-risk, an existence check plus timestamp validation is sufficient.
 
-**Scope creep on minimization**: Step 3 ("if a rollback resource is missing, create it first") can expand scope indefinitely if the missing resource is itself complex to create. Set a time budget for the rollback preparation phase; if it exceeds the budget, escalate rather than proceeding without a verified rollback.
+**Scope creep on preparation**: If creating a missing rollback resource (taking a backup, writing a down migration, pinning a release) proves complex or time-consuming, the preparation phase can expand to exceed the operation's budget. Set a time limit; if the rollback resource cannot be created within that limit, escalate rather than proceeding without a verified rollback.
