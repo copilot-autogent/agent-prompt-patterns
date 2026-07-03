@@ -2,7 +2,7 @@
 title: "Schema Validation Before Processing"
 category: "task-design"
 evidenceLevel: "promising"
-summary: "External data pipelines break silently when providers change column layouts, remove fields, or alter types. Assert structure at ingestion before passing data to business logic, normalize encoding first on affected fields, and fail loudly on any mismatch."
+summary: "External data pipelines break silently when providers change column layouts or remove fields; assert schema at ingestion, normalize encoding on affected fields first, and throw a structured error on any mismatch."
 relatedPatterns: ["input-trust-classification", "empirical-validation-loop", "large-tool-output-guard"]
 tags: ["data-pipeline", "validation", "schema", "defensive", "external-data", "encoding", "error-handling"]
 ---
@@ -17,7 +17,7 @@ When schema drift occurs without upfront validation, three failure modes compoun
 
 **Cryptic runtime errors**: Without a schema boundary, type mismatches surface as null pointer exceptions, regex mismatches, or parse failures deep in processing code — far from the data ingestion point. The error message references the symptom, not the cause. A validation error at ingestion would be immediately actionable; a crash in the fourth transformation stage is not.
 
-**Encoding traps**: Data sources from locales that use multi-byte character sets (e.g., full-width CJK digits in East Asian government datasets) produce field values that look like numbers but don't match narrow character class patterns (`\d`, `[0-9]`). Running type checks or regex parsing on unnormalized encoding produces false validation failures or silent mismatches that are indistinguishable from genuine schema errors.
+**Encoding traps**: Data sources from locales that use multi-byte character sets (e.g., full-width CJK digits in East Asian government datasets) produce field values that contain semantically numeric content but don't match ASCII character class patterns like `[0-9]`. Running type checks or regex parsing on unnormalized encoding produces false validation failures or silent mismatches that are indistinguishable from genuine schema errors.
 
 ## Context
 
@@ -40,7 +40,7 @@ Apply schema validation as a mandatory gate between data ingestion and business 
 
 **Step 2 — Normalize encoding on affected fields before validation.** For sources known to use locale-specific encoding (full-width digits, mixed Unicode normalization forms), apply Unicode normalization (NFKC or equivalent) to the specific fields that require it — before any type check or regex match on those fields. Scope normalization to the fields that need it: applying compatibility normalization globally is lossy and can alter semantically meaningful identifiers or free-text content.
 
-**Step 3 — Validate immediately on first access.** Immediately after receiving data from an external source, assert: required fields are present, column count matches expectation (for CSVs), and critical fields parse to the expected type. Do not defer this to the point of use.
+**Step 3 — Validate immediately on first access.** Immediately after receiving data from an external source, assert: required fields are present, column count matches expectation (for CSVs — both at the header level and per row), and critical fields parse to the expected type. Do not defer this to the point of use.
 
 **Step 4 — Fail loudly on mismatch.** Throw a structured validation error rather than silently coercing bad data or skipping malformed rows. The error should include: the source identifier, the expected vs. actual schema (column count, missing fields, type mismatch), and a reference to the first-failing field. Avoid including raw field values in error messages when data may contain sensitive content — log field names and positions, not values.
 
@@ -48,12 +48,12 @@ Apply schema validation as a mandatory gate between data ingestion and business 
 
 A minimal validation gate looks like:
 
-```
+```js
 function validateSchema(data, expected) {
   // 1. Normalize encoding on fields that need it (not the whole payload)
   const normalized = normalizeEncodingOnFields(data, expected.encodedFields);
 
-  // 2. Check required structure
+  // 2. Check header column count
   if (normalized.columns.length !== expected.columnCount) {
     throw new ValidationError({
       source: data.source,
@@ -64,14 +64,24 @@ function validateSchema(data, expected) {
     });
   }
 
-  for (const field of expected.requiredFields) {
-    // Use hasOwn to avoid false positives from inherited properties
-    if (!Object.hasOwn(normalized.row, field)) {
-      throw new ValidationError({ source: data.source, missingField: field });
+  // 3. Check each row's column count (header may pass while rows drift)
+  for (const row of normalized.rows) {
+    if (row.length !== expected.columnCount) {
+      throw new ValidationError({ source: data.source, rowColumnCount: row.length });
     }
   }
 
-  return normalized; // safe to pass to business logic
+  // 4. After header-to-field mapping, check required field presence
+  for (const record of normalized.records) { // records = header-mapped objects
+    for (const field of expected.requiredFields) {
+      // Use hasOwn to avoid false positives from inherited properties
+      if (!Object.hasOwn(record, field)) {
+        throw new ValidationError({ source: data.source, missingField: field });
+      }
+    }
+  }
+
+  return normalized.records; // safe to pass to business logic
 }
 ```
 
@@ -79,7 +89,7 @@ function validateSchema(data, expected) {
 
 **Government open-data CSV column shift (production incident)**: A recurring data-pipeline agent consumed government property-transaction CSV files using positional column indexing. The data provider inserted two extra fields mid-row without notice, shifting all downstream column positions. Because there was no upfront column-count assertion, the agent silently read wrong values into every field after the insertion point. The bug surfaced only when consumers noticed anomalous output. Fixing required a three-PR debug chain to identify the root cause, correct the indexing, and add a guard — work that a single upfront `assert row.length === EXPECTED_COLUMNS` would have prevented entirely.
 
-**Field-level encoding normalization gap (same pipeline, separate incident)**: The same dataset contained address fields using full-width Unicode digits (e.g., `４３号`, Unicode range U+FF10–FF19) rather than ASCII digits. Because encoding normalization was not applied to those fields before regex matching, the `\d` pattern produced zero matches on valid address values. The agent produced geocoding results of 0/500 — a silent total failure. This is a content/encoding validation problem (not schema drift per se), but it is caught by Step 2 of the pattern when the schema specification explicitly documents expected encoding for each field and normalizes before type-checking those fields.
+**Field-level encoding normalization gap (same pipeline, separate incident)**: The same dataset contained address fields using full-width Unicode digits (e.g., `４３号`, Unicode range U+FF10–FF19) rather than ASCII digits. Because encoding normalization was not applied to those fields before regex matching, the `[0-9]` pattern produced zero matches on valid address values. The agent produced geocoding results of 0/500 — a silent total failure. This is a content/encoding validation problem distinct from structural schema drift, but it is prevented by Step 2 of the pattern when the schema specification explicitly documents expected encoding for each field and normalizes before type-checking those fields.
 
 **Recurring schema drift in external APIs**: In agent systems that poll third-party APIs on a schedule, silent schema drift (renamed keys, added wrapper objects, type changes from string to integer) is a documented recurring failure class. The pattern of "works on Monday, broken by Thursday's API deploy" is common enough that several API-dependent agent pipelines now treat schema validation as a required pre-processing step rather than an optional defensive measure.
 
