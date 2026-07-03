@@ -3,7 +3,7 @@ title: "User-Visible Acceptance Criterion Completeness"
 category: "task-design"
 evidenceLevel: "moderate"
 summary: "When a sprint's acceptance criteria require the user to see or interact with a feature, the rendering/wiring path is in-scope by default — not a follow-up. Deferring UI hookup while closing the issue produces merged PRs that deliver zero user value and create perceived \"no progress\" despite real work."
-relatedPatterns: ["follow-through-discipline", "side-effect-verification", "structured-handoff-header"]
+relatedPatterns: ["follow-through-discipline", "side-effect-verification", "structured-handoff-header", "negative-test-coverage"]
 tags: ["task-design", "acceptance-criteria", "sprint-planning", "ui-rendering", "deferred-work", "user-value", "invisible-work"]
 ---
 

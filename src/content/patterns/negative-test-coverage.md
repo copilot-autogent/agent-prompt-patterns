@@ -35,7 +35,7 @@ The cost of a missing negative test is asymmetric: it is paid in production, not
 
 **Apply the "one positive, one negative" heuristic:** for every happy-path test case, ask "What would cause this function to fail, return an unexpected value, or throw?" Add that as an additional test case.
 
-If no negative test can be written, document the reason explicitly (e.g., the function is a pure mathematical computation over a type-constrained input with no error path) — in a test-file comment, docstring, or PR description. This makes coverage decisions auditable rather than invisible.
+If no negative test can be written, document the reason explicitly (e.g., the function is a pure mathematical computation over a type-constrained input with no error path) — in a test-file comment or docstring co-located with the tests. This makes coverage decisions auditable rather than invisible.
 
 ### Negative test categories
 
@@ -61,12 +61,12 @@ When generating tests for any function or module, append:
 
 ```
 After writing the happy-path test cases, also write at least one test for each of the following where applicable:
-- A null or undefined input for each parameter
+- An absent or invalid value for each parameter (null/None/nil, empty string, wrong type, or whatever the language's "no value" concept is)
 - A value just outside the valid range for numeric or array parameters
 - Each externally observable failure behaviour (function returns an error value, throws, or rejects) — focus on what the caller receives, not which internal branch runs
 - A simulated failure for any external resource (API, file, database) accessed by the function
 
-If a category does not apply to this function, state that explicitly (in a test-file comment, docstring, or PR description) rather than omitting the test silently.
+If a category does not apply to this function, state that explicitly (in a test-file comment or docstring co-located with the tests) rather than omitting the test silently.
 ```
 
 ### Anti-patterns to avoid
@@ -80,13 +80,13 @@ If a category does not apply to this function, state that explicitly (in a test-
 
 Sprint-generated test suites from an autonomous multi-agent system provide direct evidence of the pattern.
 
-**Full-width digit parsing bug (realestate-radar, June 2026):** A geocoding pipeline successfully geocoded 0 of 500 addresses — a 100% failure rate that only surfaced against live data. Root cause: Taiwan government data uses full-width digits (U+FF10–FF19, e.g. `４３号`) in address strings. The regex `\d` does not match full-width digits. The test suite had 100% line coverage on the happy path (ASCII addresses) and zero tests for non-ASCII digit variants. A single negative test with a full-width digit address — "what if the input uses CJK numerals?" — would have caught the bug before the pipeline ran against live data. This bug recurred in a second project (subsidy-radar) because the test suite pattern was copied without the negative test.
+**Full-width digit parsing bug (realestate-radar, June 2026):** A geocoding pipeline successfully geocoded 0 of 500 addresses — a 100% failure rate that only surfaced against live data. Root cause: Taiwan government data uses full-width digits (U+FF10–FF19, e.g. `４３号`) in address strings. In JavaScript (and most regex engines that don't use Unicode `\d` by default), the pattern `\d` matches only ASCII digits 0–9 and does not match full-width variants. The test suite had 100% line coverage on the happy path (ASCII addresses) and zero tests for non-ASCII digit variants. A single negative test with a full-width digit address — "what if the input uses CJK numerals?" — would have caught the bug before the pipeline ran against live data. This bug recurred in a second project (subsidy-radar) because the test suite pattern was copied without the negative test.
 
 **CSV column-shift bug (realestate-radar, June 2026):** A CSV parser was tested against a fixed-format fixture file with the expected number of columns. The government data source silently added two columns in a format update. The parser accessed fields by fixed index and silently read the wrong columns — it did not reject the input, it produced corrupt output. No test exercised what happened when the column layout shifted. A negative test with an extended-column row that asserted the correct field values (not just "file parsed without error") would have surfaced the silent index-shift before production.
 
 **Null API response handling (multiple incidents, May–June 2026):** Several sprint-generated API client modules were tested only against successful (2xx) responses. Error-path handlers (`catch` blocks, `if (!response.ok)`) existed in the implementation but had zero test coverage. When APIs returned 5xx responses in production, error handlers ran — often with bugs (uncaught secondary errors, silent swallowing of failure state) that had never been exercised. The pattern: implementation has an error path, tests do not cover it, the first production error reveals the error handler was also broken.
 
-**Consistent pattern across 12+ sprints:** A manual audit of 12 consecutive sprint-generated test suites found that 100% included happy-path tests, 83% had no tests for invalid inputs, 92% had no tests for error-condition code paths, and 75% achieved >90% line coverage despite these gaps. High coverage and low fault-detection power coexisted systematically — the structural cause was agent prompts that specified "write tests for the function" without specifying the test's scope relative to error paths.
+**Consistent pattern across 12+ sprints:** A manual audit of 12 consecutive sprint-generated test suites (each reviewed by checking test file contents against function signatures and branch coverage reports) found that 100% included happy-path tests, 83% had no tests for invalid inputs, 92% had no tests for error-condition code paths, and 75% achieved >90% line coverage despite these gaps. High coverage and low fault-detection power coexisted systematically — the structural cause was agent prompts that specified "write tests for the function" without specifying the test's scope relative to error paths.
 
 ## Tradeoffs
 
