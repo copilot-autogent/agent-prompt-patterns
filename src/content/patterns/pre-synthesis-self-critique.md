@@ -43,7 +43,7 @@ It does not apply to:
 
 ```
 After your primary analysis, add a section titled "## Self-Critique":
-- State the single strongest argument that your primary answer is WRONG.
+- State the single strongest argument that your primary answer is WRONG. If there are two equally strong independent failure modes that cannot be ranked, state both — but default to one unless genuinely indistinguishable.
 - Identify what evidence would falsify your recommendation (be concrete: what observable output, test result, or data point would change your conclusion?).
 - If you found no valid counter-argument, explain why — don't skip this section, as "I found no counter-argument" is itself meaningful signal to the synthesizer.
 ```
@@ -82,11 +82,13 @@ Averaging is not addressing. A synthesis that says "some agents expressed concer
 
 **Threshold scaling for small swarms**: The 3-agent threshold assumes a standard 3-lens swarm (Precision/Orthogonal/Integration). For a 2-agent swarm, treat consensus of both agents as HIGH-confidence risk (100% agreement = equivalent signal). For a 4+ agent swarm, keep the 3-agent absolute threshold rather than scaling proportionally, since three independent agents is sufficient evidence regardless of total pool size.
 
+**Independence assumption**: The threshold evidence reasoning assumes agents with genuinely independent perspectives (different models, different prompts). In a same-model or shared-context swarm, two or three matching critiques may reflect correlated error rather than independent convergence. Apply the HIGH-confidence label conservatively when pool independence cannot be verified — treat as elevated risk rather than HIGH-confidence, and flag the dependency in the synthesis.
+
 "High-stakes / irreversible" includes: merging to production, deleting data, architectural changes that require coordinated rollout, and any action where the cost of being wrong exceeds the cost of a delay.
 
 **Step 4: Report the critique landscape in synthesis output (recommended; omit when output schema is constrained).**
 
-When the synthesis output format permits it, include a summary of self-critiques collected and how each was resolved. This serves as an audit trail and prevents the pattern from being a paper exercise. Where the downstream consumer requires a constrained output schema (e.g., structured JSON, single-paragraph recommendation), embed the critique resolution as an internal reasoning step and surface only unresolved escalations in the final output:
+When the synthesis output format permits it, include a summary of self-critiques collected and how each was resolved. This serves as an audit trail and prevents the pattern from being a paper exercise. Where the downstream consumer requires a constrained output schema (e.g., structured JSON, single-paragraph recommendation), the critique resolution table cannot be included verbatim — in that case, ensure at minimum that any escalated (unresolved) critiques appear in the final output, and that the resolution reasoning is preserved in an intermediate scratchpad or chain-of-thought that a supervisor can inspect. A fully internal "I processed the critiques" step with no externalized artifact provides no enforcement guarantee.
 
 ```
 ## Critique Resolution
