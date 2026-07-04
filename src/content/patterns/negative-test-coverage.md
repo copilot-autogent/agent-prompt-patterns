@@ -3,7 +3,7 @@ title: "Negative Test Coverage"
 category: "task-design"
 evidenceLevel: "strong"
 summary: "Agents generating tests focus on happy-path scenarios and achieve high line coverage but low fault-detection power. For every tested behaviour, explicitly add at least one test for an invalid input, error condition, or boundary edge case — the 'one positive, one negative' heuristic."
-relatedPatterns: ["verification-before-completion", "empirical-validation-loop", "user-visible-acceptance-criterion-completeness", "schema-validation-before-processing"]
+relatedPatterns: ["verification-before-completion", "empirical-validation-loop", "user-visible-acceptance-criterion-completeness", "schema-validation-before-processing", "ssr-prerender-component-guard"]
 tags: ["testing", "negative-testing", "edge-cases", "error-handling", "boundary-values", "fault-detection", "test-coverage", "quality"]
 ---
 

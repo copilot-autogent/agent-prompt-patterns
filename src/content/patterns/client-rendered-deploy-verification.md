@@ -3,7 +3,7 @@ title: "Client-Rendered Deploy Verification"
 category: "feedback-loops"
 evidenceLevel: "strong"
 summary: "For Astro/SPA/client-rendered sites, HTTP-level checks (curl 200) and served-HTML marker-grep both produce false positives. Apply a two-layer verification protocol: Layer 1 (cache-bypassing node fetch + chunk-integrity check) is authoritative; Layer 2 (browser render after CDN propagation) detects hydration failures that Layer 1 cannot."
-relatedPatterns: ["deploy-lag-verification", "side-effect-verification", "empirical-validation-loop", "sprint-completion-verification"]
+relatedPatterns: ["deploy-lag-verification", "side-effect-verification", "empirical-validation-loop", "sprint-completion-verification", "ssr-prerender-component-guard"]
 tags: ["verification", "deployment", "client-rendering", "spa", "astro", "browser-render", "false-positive", "false-negative", "cdn", "hydration", "chunk-integrity", "tier:2-standard"]
 ---
 
