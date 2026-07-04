@@ -99,17 +99,19 @@ SvelteKit adapter-static logs `[500] GET /puzzle/[id]/` for every parameterized 
 
 ### 4. Add a render-level test for SSR safety
 
-Unit tests cannot catch SSR throws because they import components without rendering them. To reproduce the SSR throw, the test must render the component in a **Node.js (non-browser) environment** where `window`, `localStorage`, and `document` are undefined — the same environment the prerender phase runs in.
+Unit tests cannot catch SSR throws. To reproduce the SSR throw, the test must render the component in a **Node.js (non-browser) environment** where `window`, `localStorage`, and `document` are undefined — the same environment the prerender phase runs in.
 
-**Important caveat:** `@testing-library/svelte` under `jsdom` or `happy-dom` does **not** reproduce SSR throws. Those environments provide `window`, `document`, and `localStorage`, so browser-only API access succeeds. A passing test in jsdom says nothing about SSR safety.
-
-To actually catch SSR throws, use Vitest's SSR render mode:
+**Important:** `@testing-library/svelte` under `jsdom` or `happy-dom` does **not** reproduce SSR throws. Those test environments provide `window`, `document`, and `localStorage`, so browser-only API access succeeds. A passing test in jsdom is vacuously true for SSR safety. Use Vitest with `--environment node` and the framework's SSR render API:
 
 ```js
-// Using Svelte's server-side render function directly (SvelteKit / Svelte 4+)
+// Using Svelte's server-side render function in a plain Node.js environment.
+// Svelte 5: import { render } from 'svelte/server';
+// Svelte 4: const { html } = Component.render({});  (from the SSR build, e.g. via vite-node)
 // Run with: vitest --environment node  (or set environment: 'node' in vitest.config.js)
+// jsdom/happy-dom WILL NOT work — they provide window/document/localStorage,
+// which makes browser-only API calls succeed and the test vacuously pass.
 import { test, expect } from 'vitest';
-import { render } from 'svelte/server'; // available in Svelte 4+ / SvelteKit SSR build
+import { render } from 'svelte/server'; // Svelte 5 — for Svelte 4 see note below
 import MyPage from './MyPage.svelte';
 
 test('renders without throwing in Node SSR environment', () => {
@@ -118,9 +120,13 @@ test('renders without throwing in Node SSR environment', () => {
   // exactly matching what the SvelteKit prerender walk does.
   expect(() => render(MyPage, { props: {} })).not.toThrow();
 });
+// Svelte 4 equivalent (requires SSR build output or vite-node with ssr:true):
+// import MyPage from './MyPage.svelte?raw';  // or via vite-node SSR transform
+// const MyPageSSR = (await import(/* @vite-ignore */ './MyPage.svelte')).default;
+// expect(() => MyPageSSR.render({})).not.toThrow();
 ```
 
-If your project doesn't expose a server render function directly, the lightest approach is a build-level integration test: run `vite build` in a subprocess and assert `test -s dist/index.html`. This is slower but catches the actual prerender path without additional test dependencies.
+If your project doesn't expose a server render function directly, the lightest approach is a build-level integration test: run `vite build` in a subprocess and assert `test -s build/index.html` (adapt the path to your framework's output directory). This is slower but catches the actual prerender path without additional test dependencies.
 
 > **Alternative when full SSR test setup is impractical:** enforce code review for any component added to a prerendered route and treat the file-existence CI check (step 2) as the safety net.
 
@@ -147,11 +153,11 @@ If a production route is returning HTTP 404 (or serving a blank page from the la
 1. **Confirm the route didn't publish.** Fetch live `index.html` with a cache-bypassing request (requires Node ≥18 for native `fetch`; use `node-fetch` on older runtimes):
    ```bash
    node -e "
-     fetch('https://example.github.io/myapp/?cb=' + Date.now(), { cache: 'no-store' })
+     fetch('https://example.github.io/myapp/?cb=' + Date.now())
        .then(r => console.log(r.status, r.url))
    "
    ```
-   HTTP 404 confirms `index.html` was not written to the build output.
+   HTTP 404 is a strong signal that `index.html` was not written to the build output, though the same symptom can also arise from a misconfigured base path, publish directory, or CDN routing rule — always cross-reference with the CI build log to confirm the prerender throw is the root cause.
 
 2. **Find the throwing component.** Check the Pages/CI build log for `[5xx] GET /` lines near the affected route. The stack trace that follows names the exact component and API call:
    ```
@@ -176,7 +182,7 @@ Both incidents occurred within 24 hours on the same production system (July 2026
 
 **Benefit:** The `{#if ready}` gate is a two-line change that prevents an entire class of silent 404s. The `test -s build/index.html` CI check adds one line per prerendered route and catches what build exit codes cannot. Together they close the feedback gap between "build succeeded" and "route actually published."
 
-**Cost:** Every new component that accesses browser-only APIs requires a developer to recognize the constraint and add the gate. The render-level test (step 4) requires `@testing-library/svelte` and a jsdom/happy-dom environment — if those aren't already in the project, they add a dev dependency and test setup.
+**Cost:** Every new component that accesses browser-only APIs requires a developer to recognize the constraint and add the gate. The render-level test (step 4) requires `svelte/server` (Svelte 5) or the component's SSR build (Svelte 4) running in a `vitest --environment node` context — if SSR test infrastructure isn't already in the project, it adds setup cost. The `test -s` CI check has a maintenance cost: it is a hand-maintained route list and must be updated when new prerendered routes are added; a route added but not listed will not be covered by the check.
 
 **The `{#if ready}` gate defers rendering to client-side hydration**, which means the component's content will not be in the SSR HTML and will not be indexed by crawlers. For most interactive components (charts, stores, localStorage-backed UI), this is the correct tradeoff. For content that must be crawlable, the underlying component needs to be made SSR-safe instead of gated.
 
