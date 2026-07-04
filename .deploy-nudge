@@ -1,5 +1,5 @@
 Inert file to re-trigger the Pages deploy workflow after a transient
-GitHub-side "Deployment failed, try again later." on the #96 merge
-(build succeeded; deploy job failed). Safe to delete/overwrite.
+GitHub-side "Deployment failed, try again later." (build succeeds;
+deploy job fails). Safe to delete/overwrite.
 
-last-nudge: 2026-07-03T16:31Z (republish #96 rollback-first-planning)
+last-nudge: 2026-07-04T13:10Z (republish #106 ssr-prerender-component-guard)
