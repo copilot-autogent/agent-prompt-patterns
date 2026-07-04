@@ -44,9 +44,10 @@ Before writing any causal claim to persistent storage, apply four steps:
              but `get_me` succeeded in the same subprocess. That falsifies the hypothesis."
 
 3. RUN THE CHECK
-   Execute the observable test before writing. If the result is inconclusive, do not
-   record the hypothesis as fact. Write instead:
-   [UNCONFIRMED: open question — <symptom observed, cause unknown>]
+   Execute the observable test before writing. Three outcomes:
+   - **Confirmed**: the observable matches the hypothesis → proceed to step 4.
+   - **Falsified**: the observable contradicts the hypothesis → update your model, return to step 1 with a new hypothesis. Do not write the falsified claim.
+   - **Inconclusive**: the check cannot distinguish the proposed cause from alternatives → write only the symptom, tagged [UNCONFIRMED: open question — <symptom observed, cause unknown>].
 
 4. UPGRADE TO FACT ONLY AFTER CONFIRMATION
    Once the observable confirms the hypothesis, write the causal claim to the persistent
@@ -62,11 +63,16 @@ The higher the reach of the storage, the higher the bar before writing:
 | Session notes / scratch | Current session only | Low — hypothesis-as-hypothesis is fine |
 | Persistent memory topic | Recalled on demand, scoped | Moderate — flag unconfirmed claims |
 | Issue / PR comment | Future sprint agents reading that thread | Moderate — distinguish symptom from cause; avoid including auth/credential details in public threads |
-| `CONTEXT.md` / `PLAYBOOK.md` | Every future session, every sprint agent | **High — observable confirmation required, or tag `[UNCONFIRMED]`** |
+| `CONTEXT.md` / `PLAYBOOK.md` | Every future session, every sprint agent | **Highest — delay the write until confirmed. If confirmation is impossible, do not write at all; use a pull-only memory topic instead.** |
 
 ### Handling Unconfirmed Hypotheses
 
-When you cannot run a falsifying check (no access to the environment, no reproducer available), record the symptom and the open question rather than the causal chain:
+When you cannot run a falsifying check (no access to the environment, no reproducer available):
+
+- **For push-injected files** (`CONTEXT.md`, `PLAYBOOK.md`): do not write the unconfirmed claim at all. Instead, write only the observable symptom to a **pull-only memory topic** (where it is recalled on demand, not injected into every session). This avoids push-contaminating every future sprint agent with a speculative diagnosis.
+- **For memory topics and issue/PR comments**: recording with `[UNCONFIRMED]` is acceptable — agents query these on demand rather than receiving them unconditionally.
+
+The `[UNCONFIRMED]` tag format:
 
 ```
 # GOOD — records the symptom and open question:
@@ -79,19 +85,19 @@ errors remain possible — check the specific endpoint's required scopes separat
 GITHUB_API_TOKEN absent in subprocess env → board-sync broken (FORBIDDEN errors).
 ```
 
-The `[UNCONFIRMED]` tag is a **convention**, not a machine-enforced schema. Memory and retrieval systems will surface tagged entries alongside confirmed facts — the tag only works if agents reading the file treat it as a gate. When recording an `[UNCONFIRMED]` entry, always include an explicit verification step ("check with: …") so the convention has teeth. It preserves the observation (the symptom is real) while refusing to assert the cause.
+The `[UNCONFIRMED]` tag is a **convention**, not a machine-enforced schema. Retrieval and bootstrap systems surface tagged entries alongside confirmed facts — the tag only works if agents reading the file treat it as a gate. When recording an `[UNCONFIRMED]` entry, always include an explicit verification step ("check with: …") so the convention has teeth. **For this reason, `[UNCONFIRMED]` is most effective in pull-only storage** (memory topics, issue threads) where an agent deliberately retrieves it before acting; it is least reliable in push-injected files where every sprint agent receives it unconditionally.
 
 ### Retractions Cost More Than Getting It Right Once
 
 A confirmed wrong entry in `CONTEXT.md` cannot be safely deleted without context — future agents may have already anchored on it. The options, in order of preference:
 
-1. **Replace and archive (preferred for push-injected files)**: rewrite the entry with the correct causal chain and archive the old one (e.g., move to a `context-archive-YYYY` memory topic with a dated note). This keeps the push file clean while preserving the audit trail in a pull-retrieval system.
+1. **Replace and archive (preferred for push-injected files)**: rewrite the entry with the correct causal chain and archive the old one to a **pull-only** memory topic (e.g., `context-archive-YYYY`). Pull-only topics are recalled on demand — they do not inject into every session — so the archived wrong claim cannot re-contaminate future agents unless they explicitly recall it. This keeps the push file clean while preserving the audit trail.
 
 2. **Retraction note (fallback when replacement is ambiguous)**: append a retraction immediately after the original entry:
    > ✅ **Correction (date)**: the above was falsified empirically — [what actually happened].
    But be aware: both the wrong claim and the retraction note now persist in the file, costing 4–8 lines of context indefinitely, and some agents will anchor on whichever they read first.
 
-**Concurrent writers**: in multi-sprint systems, multiple agents may independently form and "confirm" conflicting diagnoses about the same symptom. Before writing a confirmed causal claim to a shared push file, check whether another agent has already recorded a diagnosis for the same symptom — conflicting confirmed claims are harder to resolve than a single wrong claim.
+**Concurrent writers**: in multi-sprint systems, multiple agents may independently form and "confirm" conflicting diagnoses about the same symptom. Before writing a confirmed causal claim to a shared push file, check whether another agent has already recorded a diagnosis for the same symptom — conflicting confirmed claims are harder to resolve than a single wrong claim. Note that no serialization guarantee exists: two agents can each independently pass the falsification gate and write conflicting claims simultaneously. The pattern reduces the probability of this (fewer wrong claims in total), but does not eliminate the race; shared push-file hygiene requires periodic human review in high-throughput sprint systems.
 
 The only way to avoid all these costs is to not write the wrong claim in the first place.
 
