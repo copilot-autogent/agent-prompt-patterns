@@ -58,9 +58,9 @@ The three prompts serve different functions:
 
 ### Synthesizer behavior
 
-**Step 1: Read all self-critiques before reading primary answers.**
+**Step 1: Process all self-critiques before synthesizing primary answers.**
 
-This prevents anchoring on the primary answers. The synthesizer should form a mental model of the risk landscape from the critiques first, then read primary answers against that landscape.
+Because self-critiques appear in the same free-form response as primary answers (as a `## Self-Critique` section), the synthesizer reads them by extracting the section from each agent's full output. Concretely: collect the `## Self-Critique` sections first, form a mental model of the risk landscape, then return to read the full primary analyses against that landscape. This sequencing prevents anchoring — a synthesizer that reads three converging primary answers before the critiques will unconsciously discount the critiques as minority views.
 
 **Step 2: For each critique that points to a genuine unresolved risk, explicitly address it.**
 
@@ -75,9 +75,12 @@ Averaging is not addressing. A synthesis that says "some agents expressed concer
 
 | Condition | Action |
 |---|---|
-| 1–2 agents share a critique | Address in synthesis; may proceed if refuted or mitigated |
+| 1 agent raises a critique (others don't) | Address in synthesis; may proceed if refuted or mitigated |
+| 2 agents share a critique | Treat as elevated risk; require explicit refutation or mitigation before proceeding |
 | 3+ agents share a similar self-critique | Treat as HIGH-confidence risk; do not override in synthesis without explicit justification |
 | Any unresolved critique on a high-stakes / irreversible decision | Escalate to human review rather than synthesizing a recommendation |
+
+**Threshold scaling for small swarms**: The 3-agent threshold assumes a standard 3-lens swarm (Precision/Orthogonal/Integration). For a 2-agent swarm, treat consensus of both agents as HIGH-confidence risk (100% agreement = equivalent signal). For a 4+ agent swarm, keep the 3-agent absolute threshold rather than scaling proportionally, since three independent agents is sufficient evidence regardless of total pool size.
 
 "High-stakes / irreversible" includes: merging to production, deleting data, architectural changes that require coordinated rollout, and any action where the cost of being wrong exceeds the cost of a delay.
 
@@ -106,7 +109,7 @@ If three agents produce the same critique, merge them into one row marked `[×3 
 - Orthogonal agent primary answer: "null check missing." Self-critique: "I did not trace all callers of `invalidateCache()`. If called from a background thread, my null-check fix may mask a concurrent access bug."
 - Creative agent primary answer: "null check, plus suggest adding a test for edge case X." Self-critique: "I may have over-indexed on the null check. The more dangerous defect could be in paths I didn't fully explore."
 
-Synthesis: two agents share a critique about concurrent access in `invalidateCache()`. HIGH-confidence risk. Escalated. Null check noted separately. PR blocked pending concurrent access analysis.
+Synthesis: two agents (out of three) share a critique about concurrent access in `invalidateCache()`. Elevated risk; synthesizer cannot refute or mitigate without additional analysis. Escalated. Null check noted separately. PR blocked pending concurrent access analysis.
 
 ## Calibrating critique quality
 
@@ -138,7 +141,7 @@ The synthesizer should flag low-quality self-critiques as "no genuine self-criti
 
 **swarm_agents design pattern** (feature-roadmap: Swarm Convergence Stall Detection): identified that diversity metric (inter-agent response similarity) without an adversarial protocol still allows premature consensus. Swarms with diverse model pools can still converge if no agent is required to challenge its own answer.
 
-**Paper survey recurring front** — "Agent Verification & Self-Criticism" appeared in surveys on 2026-07-01 (Agent Introspection & Reliability), 2026-07-02 (Verification & Trustworthy AI), and 2026-07-03 (Agent Verification & Self-Criticism) as a research front. Experimental evidence: adversarial self-review reduces confident-incorrect synthesis in multi-agent systems.
+**Paper survey recurring front** — "Agent Verification & Self-Criticism" appeared in surveys on 2026-07-01 (Agent Introspection & Reliability), 2026-07-02 (Verification & Trustworthy AI), and 2026-07-03 (Agent Verification & Self-Criticism) as a research front. The research trajectory suggests adversarial self-review as a mechanism for reducing confident-incorrect synthesis in multi-agent systems, though controlled empirical comparisons remain in progress.
 
 **Convergence stall detection observations** (autogent incident data): swarm-based PR reviews consistently surfaced the same visible issues while missing non-obvious ones. Post-hoc analysis of agent outputs in several cases found that individual agents had internally recognized a non-obvious risk but did not surface it in their primary analysis. A mandatory self-critique section would have surfaced these buried recognitions.
 
