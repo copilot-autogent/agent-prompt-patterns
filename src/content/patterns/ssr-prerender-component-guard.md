@@ -9,7 +9,7 @@ tags: ["ssr", "prerender", "sveltekit", "svelte", "static-site", "browser-api", 
 
 ## Problem
 
-An agent adds a new component to a SvelteKit adapter-static (or Next.js / Astro) project. The component reads `localStorage`, accesses `window`, or calls `.subscribe()` on a Svelte store. All unit tests pass — they import the component as a pure module without rendering it, so the browser-only call never executes. The build also exits 0, because `continueOnError: true` in the prerender configuration suppresses the throw as a warning rather than a hard error.
+An agent adds a new component to a SvelteKit adapter-static (or Next.js / Astro) project. The component reads `localStorage`, accesses `window`, or initializes a Svelte store from browser-only state (e.g. `writable(localStorage.getItem('key'))`). All unit tests pass — they import the component as a pure module without rendering it, so the browser-only call never executes. The build also exits 0, because `continueOnError: true` in the prerender configuration suppresses the throw as a warning rather than a hard error.
 
 What silently happens: during the static prerender phase, the framework renders every prerendered route to HTML. The component throws (`store.subscribe is not a function`, `window is not defined`, etc.). The prerender logs a `[500] GET /` warning and **skips writing that route's `index.html`** to the output directory. No file, no 404 at the origin, no error in the CI summary.
 
@@ -27,7 +27,7 @@ This pattern applies when:
 
 - The project uses a static-site adapter with a build-time prerender phase: SvelteKit `adapter-static`, Next.js `output: 'export'`, Astro with prerendering enabled.
 - The framework is configured with `continueOnError: true` (or equivalent) so that a single component throw does not abort the entire build.
-- A component accesses browser-only APIs: `localStorage`, `sessionStorage`, `window`, `document`, `navigator`, Svelte stores that call `.subscribe()` at module initialization, or any API that does not exist in the Node.js SSR environment.
+- The component accesses browser-only APIs: `localStorage`, `sessionStorage`, `window`, `document`, `navigator`, or imports a library that accesses these at module initialization. Svelte stores themselves are SSR-safe — but a store whose *value* is initialized by reading `localStorage` (e.g. `const count = writable(localStorage.getItem('count'))`) will throw during SSR because `localStorage` is undefined in Node.js. The issue is not `store.subscribe` per se but the browser-only API call inside the store initialization or component code.
 
 It does **not** apply to:
 - Server-rendered routes (SSR with a server runtime) where the same APIs are expected to be unavailable and errors surface immediately.
@@ -61,7 +61,11 @@ It does **not** apply to:
 Build exit code is not sufficient when `continueOnError: true` masks prerender throws. Check that each prerendered route's `index.html` was actually written:
 
 ```bash
-# In your CI workflow, after the build step:
+# In your CI workflow, after the build step.
+# Adapt the output directory and route paths to your framework/config:
+#   SvelteKit adapter-static: build/  (or .svelte-kit/output/prerendered/ before copy)
+#   Next.js output:'export':  out/
+#   Astro (adapter-static):   dist/
 test -s build/index.html              # home route
 test -s build/stats/index.html        # /stats route
 test -s build/flagged/index.html      # /flagged route
@@ -69,6 +73,8 @@ test -s build/flagged/index.html      # /flagged route
 ```
 
 Each `test -s` call fails (exit non-zero) if the file is absent or empty — catching the silent omission that `continueOnError` hides. This check is fast, zero-dependency, and catches the exact failure mode that build-exit-code cannot.
+
+The output directory and route-to-file mapping differ by framework (SvelteKit: `build/<route>/index.html`; Next.js: `out/<route>.html` or `out/<route>/index.html` depending on `trailingSlash`; Astro: `dist/<route>/index.html`). Derive the path from your project's actual config rather than copying the example verbatim.
 
 ### 3. Scope any [5xx] log-grep guard narrowly
 
@@ -78,34 +84,45 @@ If you also want to grep the build log for prerender errors, scope the pattern t
 # BAD: false-positives on every dynamic (non-prerendered) route
 grep -qE '\[5[0-9]{2}\] GET ' build.log && echo "FAIL: prerender error"
 
-# GOOD: scoped to only the routes that MUST succeed
-if grep -qE '\[5[0-9]{2}\] GET /myapp/(stats|flagged)?( |$)' build.log; then
+# GOOD: scoped to the specific prerendered entry routes, including trailing slash variants
+# Replace /myapp/ and the route names with your actual base path and prerendered routes.
+if grep -qE '\[5[0-9]{2}\] GET /myapp/(stats|flagged)?\/?( |$)' build.log; then
   echo "FAIL: prerendered entry route threw during prerender" && exit 1
 fi
 ```
 
 SvelteKit adapter-static logs `[500] GET /puzzle/[id]/` for every parameterized route served via SPA fallback. These are expected and benign. A guard that matches them will block every deploy.
 
+**Note on trailing slashes:** SvelteKit prerender log entries typically include a trailing slash (e.g. `[500] GET /myapp/stats/`). Include `\/?` before the end anchor in your guard regex so it matches both `/stats` and `/stats/`.
+
 **Prefer `test -s` over log-grep.** The file-existence check (step 2) is simpler, more direct, and immune to this scoping problem. Use log-grep only as a supplementary diagnostic hint.
 
 ### 4. Add a render-level test for SSR safety
 
-Unit tests cannot catch SSR throws. Add a render-level test that mounts the component in an SSR-like environment and asserts it does not throw:
+Unit tests cannot catch SSR throws because they import components without rendering them. To reproduce the SSR throw, the test must render the component in a **Node.js (non-browser) environment** where `window`, `localStorage`, and `document` are undefined — the same environment the prerender phase runs in.
+
+**Important caveat:** `@testing-library/svelte` under `jsdom` or `happy-dom` does **not** reproduce SSR throws. Those environments provide `window`, `document`, and `localStorage`, so browser-only API access succeeds. A passing test in jsdom says nothing about SSR safety.
+
+To actually catch SSR throws, use Vitest's SSR render mode:
 
 ```js
-// Using @testing-library/svelte (jsdom or happy-dom environment)
-import { render } from '@testing-library/svelte';
-import { expect, test } from 'vitest';
+// Using Svelte's server-side render function directly (SvelteKit / Svelte 4+)
+// Run with: vitest --environment node  (or set environment: 'node' in vitest.config.js)
+import { test, expect } from 'vitest';
+import { render } from 'svelte/server'; // available in Svelte 4+ / SvelteKit SSR build
 import MyPage from './MyPage.svelte';
 
-test('renders without throwing (SSR safety)', () => {
-  // If the component calls a browser-only API during render,
-  // this throws and the test fails — matching what SSR prerender does.
-  expect(() => render(MyPage)).not.toThrow();
+test('renders without throwing in Node SSR environment', () => {
+  // This runs in a plain Node.js environment without window/document/localStorage.
+  // If the component calls a browser-only API at render time, it throws here —
+  // exactly matching what the SvelteKit prerender walk does.
+  expect(() => render(MyPage, { props: {} })).not.toThrow();
 });
 ```
 
-This test exercises the render path that unit tests skip, turning an invisible build-time failure into a visible pre-push test failure.
+If your project doesn't expose a server render function directly, the lightest approach is a build-level integration test: run `vite build` in a subprocess and assert `test -s dist/index.html`. This is slower but catches the actual prerender path without additional test dependencies.
+
+> **Alternative when full SSR test setup is impractical:** enforce code review for any component added to a prerendered route and treat the file-existence CI check (step 2) as the safety net.
 
 **Prompt template for adding a new component to a prerendered route:**
 
@@ -127,7 +144,7 @@ Before adding <ComponentName> to a prerendered route:
 
 If a production route is returning HTTP 404 (or serving a blank page from the last-good build):
 
-1. **Confirm the route didn't publish.** Fetch live `index.html` with a cache-bypassing request:
+1. **Confirm the route didn't publish.** Fetch live `index.html` with a cache-bypassing request (requires Node ≥18 for native `fetch`; use `node-fetch` on older runtimes):
    ```bash
    node -e "
      fetch('https://example.github.io/myapp/?cb=' + Date.now(), { cache: 'no-store' })
@@ -139,7 +156,7 @@ If a production route is returning HTTP 404 (or serving a blank page from the la
 2. **Find the throwing component.** Check the Pages/CI build log for `[5xx] GET /` lines near the affected route. The stack trace that follows names the exact component and API call:
    ```
    [500] GET /
-   Error: store.subscribe is not a function
+   Error: Cannot read properties of undefined (reading 'getItem')
      at UpcomingReviews.svelte:12
    ```
 
@@ -149,7 +166,7 @@ If a production route is returning HTTP 404 (or serving a blank page from the la
 
 ## Evidence
 
-**shogi-srs #216 (2026-07-03):** PR #224 added `UpcomingReviews.svelte` without an `{#if ready}` gate. The component called `store.subscribe` during render, threw during prerender, and silently omitted `index.html`. The home page returned HTTP 404 for approximately 30 minutes. Fixed via `eae2df8` (gate added) and `fefa157` (integration removed until the component's SSR safety bug was fixed). The CI build had exited 0 throughout; `verify_deploy` returned 200 from the last-good CDN cache; the sprint self-reported success. The outage was discovered via direct HTTP check of the live route.
+**shogi-srs #216 (2026-07-03):** PR #224 added `UpcomingReviews.svelte` without an `{#if ready}` gate. The component initialized a Svelte store by reading `localStorage` at module load, which threw (`Cannot read properties of undefined (reading 'getItem')` in the Node.js SSR environment) during prerender, and silently omitted `index.html`. The home page returned HTTP 404 for approximately 30 minutes. Fixed via `eae2df8` (gate added) and `fefa157` (integration removed until the component's SSR safety bug was fixed). The CI build had exited 0 throughout; `verify_deploy` returned 200 from the last-good CDN cache; the sprint self-reported success. The outage was discovered via direct HTTP check of the live route.
 
 **shogi-srs #225 (2026-07-04):** A CI guard added as a remediation for #216 used `grep -qE '\[5[0-9]{2}\] GET '` on the entire build log. SvelteKit adapter-static legitimately logs hundreds of `[500] GET /puzzle/[id]/` lines for non-prerendered parameterized routes. The guard false-positived on every build and blocked its own deploy. Fixed via `69f43e3` by scoping the grep to `/shogi-srs/(stats|flagged)?` (the specific prerendered entry routes). The preferred fix for future projects is `test -s build/index.html`, which avoids the scoping problem entirely.
 
