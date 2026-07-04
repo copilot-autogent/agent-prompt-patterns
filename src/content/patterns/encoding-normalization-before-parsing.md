@@ -65,12 +65,13 @@ function normalizeField(value) {
 const normalized = normalizeField(rawAddress); // "４３号" → "43号"
 const houseNumber = normalized.match(/\d+/)?.[0]; // "43"
 
-// Bad: match on raw value silently fails
-const houseNumber = rawAddress.match(/\d+/)?.[0]; // null — full-width \d miss
+// Bad: match on raw value silently fails (full-width digits don't match \d in JS)
+// const badHouseNumber = rawAddress.match(/\d+/)?.[0]; // undefined — full-width \d miss
 ```
 
 ```python
 # Python — normalize before any digit operation
+import re
 import unicodedata
 
 def normalize_field(value: str) -> str:
@@ -78,10 +79,12 @@ def normalize_field(value: str) -> str:
 
 # Good
 normalized = normalize_field(raw_address)  # "４３号" → "43号"
-house_number = re.search(r'\d+', normalized)
+house_number = re.search(r'[0-9]+', normalized)  # matches "43"
 
-# Bad — silently returns None
-house_number = re.search(r'\d+', raw_address)
+# Bad — silently returns None (Python's re [0-9] is explicit ASCII, skips full-width digits)
+# house_number = re.search(r'[0-9]+', raw_address)  # None
+# Note: Python's \d does match Unicode digits, but int("４３") still raises ValueError —
+# normalize before any int() or float() call on government data fields.
 ```
 
 Normalize at the **ingestion boundary**, not at the point of use. If normalization is deferred to individual callsites, it will be missed at some callsites. A single normalization pass immediately after reading rows from the CSV or parsing the JSON eliminates the entire class of failures.
@@ -111,10 +114,15 @@ Conversion algorithm:
  */
 function parseROCDate(packed) {
   const s = String(packed).normalize('NFKC'); // normalize full-width digits first
+  // 6 digits = 民國10–99年 (YY MMDD); 7 digits = 民國100–999年 (YYY MMDD)
+  // Note: 民國1–9年 (5-digit YMMDD) are not present in 實價登錄 post-1991 data;
+  // for datasets predating 民國10年 (1921), widen to /^\d{5,7}$/.
   if (!/^\d{6,7}$/.test(s)) return null;
   const day = parseInt(s.slice(-2), 10);
   const month = parseInt(s.slice(-4, -2), 10);
   const rocYear = parseInt(s.slice(0, -4), 10);
+  // Validate month and day ranges before returning
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
   const gregorianYear = rocYear + 1911;
   return { year: gregorianYear, month, day };
 }
@@ -133,7 +141,7 @@ Instead, define `maxYear` as a module-level constant with a default that can be 
 
 ```js
 // config.js
-export const MAX_YEAR = parseInt(process.env.MAX_BUILD_YEAR ?? '2030', 10);
+export const MAX_YEAR = parseInt(process.env.MAX_BUILD_YEAR ?? '2050', 10);
 
 // buildYear.js
 import { MAX_YEAR } from './config.js';
@@ -141,7 +149,7 @@ import { MAX_YEAR } from './config.js';
 export function parseBuildYear(packed, { maxYear = MAX_YEAR } = {}) {
   const parsed = parseROCDate(packed);
   if (!parsed) return null;
-  if (parsed.year < 1911 || parsed.year > maxYear) return null;
+  if (parsed.year < 1912 || parsed.year > maxYear) return null;
   return parsed.year;
 }
 ```
@@ -153,22 +161,26 @@ This keeps tests deterministic regardless of when they run, and makes the year b
 ```js
 import { parse } from 'csv-parse/sync';
 
-const MAX_YEAR = 2030; // configurable; do not use new Date().getFullYear()
+// Structured fields in this dataset that contain encoded numeric/date data.
+// Scope NFKC normalization to these fields to avoid lossy changes to free-text columns.
+const STRUCTURED_FIELDS = ['address', 'district_code', 'completion_date', 'transaction_date'];
 
 function ingestGovCSV(rawBuffer) {
+  // Note: rawBuffer must already be decoded from the source charset (e.g., Big5 → UTF-8)
+  // before NFKC normalization — NFKC operates on Unicode code points, not raw bytes.
   const rows = parse(rawBuffer, { columns: true, bom: true });
 
   return rows.map(row => {
-    // Step 1: normalize all string fields at the boundary
-    const normalized = Object.fromEntries(
-      Object.entries(row).map(([k, v]) => [
-        k,
-        typeof v === 'string' ? v.normalize('NFKC') : v,
-      ])
-    );
+    // Step 1: normalize structured fields at the boundary (scoped, not global)
+    const normalized = { ...row };
+    for (const field of STRUCTURED_FIELDS) {
+      if (typeof normalized[field] === 'string') {
+        normalized[field] = normalized[field].normalize('NFKC');
+      }
+    }
 
     // Step 2: parse ROC date fields after normalization
-    const completionYear = parseROCDate(normalized.completion_date)?.year ?? null;
+    const completionYear = parseROCDate(normalized.completion_date, { maxYear: 2050 })?.year ?? null;
 
     return {
       ...normalized,
