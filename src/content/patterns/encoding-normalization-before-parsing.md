@@ -81,10 +81,11 @@ def normalize_field(value: str) -> str:
 normalized = normalize_field(raw_address)  # "４３号" → "43号"
 house_number = re.search(r'[0-9]+', normalized)  # matches "43"
 
-# Bad — silently returns None (Python's re [0-9] is explicit ASCII, skips full-width digits)
+# Bad — silently returns None ([0-9] in Python re is always ASCII-only, skips full-width digits)
 # house_number = re.search(r'[0-9]+', raw_address)  # None
-# Note: Python's int("４３") actually succeeds (Python 3 accepts Unicode decimal digits),
-# but [0-9] regex, ASCII string comparisons, and float("４３") may still fail on full-width input.
+# Note: Python's \d without re.ASCII matches Unicode decimal digits (including full-width),
+# so re.search(r'\d+', "４３号") returns a match — but string comparisons and many
+# third-party parsers that use [0-9] or ASCII-only paths will still fail silently.
 # Normalize before any such operation for consistent behaviour across field types.
 ```
 
@@ -125,6 +126,9 @@ function parseROCDate(packed) {
   // Validate month and day ranges before returning
   if (month < 1 || month > 12 || day < 1 || day > 31) return null;
   const gregorianYear = rocYear + 1911;
+  // Verify the date is actually valid (catches Feb 30, Apr 31, etc.)
+  const d = new Date(gregorianYear, month - 1, day);
+  if (d.getFullYear() !== gregorianYear || d.getMonth() !== month - 1 || d.getDate() !== day) return null;
   return { year: gregorianYear, month, day };
 }
 
@@ -142,7 +146,10 @@ Instead, define `maxYear` as a module-level constant with a default that can be 
 
 ```js
 // config.js
-export const MAX_YEAR = parseInt(process.env.MAX_BUILD_YEAR ?? '', 10) || 2050;
+export const MAX_YEAR = (() => {
+  const n = parseInt(process.env.MAX_BUILD_YEAR ?? '', 10);
+  return Number.isFinite(n) && n > 1911 ? n : 2050;
+})();
 
 // buildYear.js
 import { MAX_YEAR } from './config.js';
@@ -151,6 +158,8 @@ export function parseBuildYear(packed, { maxYear = MAX_YEAR } = {}) {
   const parsed = parseROCDate(packed);
   if (!parsed) return null;
   if (parsed.year < 1912 || parsed.year > maxYear) return null;
+  // Note: with the default 6-7 digit regex, min ROC year is 10 → 1921, so the < 1912 guard
+  // only fires if the caller widens the regex to 5-7 digits (民國1-9年 datasets).
   return parsed.year;
 }
 ```
@@ -167,8 +176,9 @@ import { parse } from 'csv-parse/sync';
 const STRUCTURED_FIELDS = ['address', 'district_code', 'completion_date', 'transaction_date'];
 
 function ingestGovCSV(rawBuffer) {
-  // Note: rawBuffer must already be decoded from the source charset (e.g., Big5 → UTF-8)
-  // before NFKC normalization — NFKC operates on Unicode code points, not raw bytes.
+  // IMPORTANT: rawBuffer must already be decoded from the source charset (e.g., Big5/CP950 → UTF-8)
+  // before this function is called. Pass the decoded string, not raw bytes. Many Taiwan government
+  // CSV exports use Big5; passing undecoded bytes corrupts fields before NFKC ever runs.
   const rows = parse(rawBuffer, { columns: true, bom: true });
 
   return rows.map(row => {
