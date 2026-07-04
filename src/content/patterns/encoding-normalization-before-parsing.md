@@ -83,8 +83,9 @@ house_number = re.search(r'[0-9]+', normalized)  # matches "43"
 
 # Bad — silently returns None (Python's re [0-9] is explicit ASCII, skips full-width digits)
 # house_number = re.search(r'[0-9]+', raw_address)  # None
-# Note: Python's \d does match Unicode digits, but int("４３") still raises ValueError —
-# normalize before any int() or float() call on government data fields.
+# Note: Python's int("４３") actually succeeds (Python 3 accepts Unicode decimal digits),
+# but [0-9] regex, ASCII string comparisons, and float("４３") may still fail on full-width input.
+# Normalize before any such operation for consistent behaviour across field types.
 ```
 
 Normalize at the **ingestion boundary**, not at the point of use. If normalization is deferred to individual callsites, it will be missed at some callsites. A single normalization pass immediately after reading rows from the CSV or parsing the JSON eliminates the entire class of failures.
@@ -141,7 +142,7 @@ Instead, define `maxYear` as a module-level constant with a default that can be 
 
 ```js
 // config.js
-export const MAX_YEAR = parseInt(process.env.MAX_BUILD_YEAR ?? '2050', 10);
+export const MAX_YEAR = parseInt(process.env.MAX_BUILD_YEAR ?? '', 10) || 2050;
 
 // buildYear.js
 import { MAX_YEAR } from './config.js';
@@ -179,8 +180,8 @@ function ingestGovCSV(rawBuffer) {
       }
     }
 
-    // Step 2: parse ROC date fields after normalization
-    const completionYear = parseROCDate(normalized.completion_date, { maxYear: 2050 })?.year ?? null;
+    // Step 2: parse ROC date fields; use parseBuildYear for year-range bounds check
+    const completionYear = parseBuildYear(normalized.completion_date) ?? null;
 
     return {
       ...normalized,
