@@ -75,7 +75,7 @@ Three elements are required:
 
 Update the issue body **at the moment Phase 1 completes** — before the next scheduled tick, before any new sprint is dispatched. The update is not a documentation step; it is the gate that prevents duplicate dispatch. Deferring it risks a tick firing in the window between Phase 1 completion and the body update.
 
-**Concurrency caveat:** The body update closes the gate for future dispatches, but a dispatch that was already queued or mid-flight may have read the stale body before the update was written. If Phase 1 completes and a new dispatch fires within seconds, that dispatch may still re-audit. Treat the body update as a best-effort race: it eliminates all *future* re-audits but cannot cancel an in-progress one. To cover the in-flight case, pair with [Dedup-Search Before Autonomous Issue Filing](/agent-prompt-patterns/patterns/dedup-search-before-filing) as a defense-in-depth backstop — if the re-audit does run, the dedup search prevents it from actually filing new duplicates.
+**Concurrency caveat:** The body update closes the gate for future dispatches, but a dispatch that was already queued or mid-flight may have read the stale body before the update was written. Additionally, if two agents (or a human and an agent) update the same epic body concurrently, GitHub's last-writer-wins semantics may overwrite the completion marker, silently reverting the gate. Treat the body update as a best-effort gate: it eliminates all *future* re-audits from agents that read the updated body, but cannot cancel an in-progress dispatch or survive a concurrent overwrite. To cover the in-flight case, pair with [Dedup-Search Before Autonomous Issue Filing](/agent-prompt-patterns/patterns/dedup-search-before-filing) as a defense-in-depth backstop — if the re-audit does run, the dedup search prevents it from actually filing new duplicates.
 
 ### When Phase 2 itself completes
 
@@ -98,6 +98,8 @@ Verify the following are working end-to-end:
 
 The merged PR list serves the same function as the duplicate issue list in Phase 1: concrete evidence the agent can inspect to confirm completion rather than relying on the body's claim alone.
 
+**Pruning long epics.** For epics with many phases, the accumulation of completed-phase blocks can grow large enough to cause context-overflow — recreating the problem this pattern is trying to prevent. After all phases complete, collapse the completed-phase blocks into a single archive summary: "Phases 1–3 complete (see PRs #N, #M, #P). Phase 4 ACTIVE." Keep only the currently-active phase instructions in full. This pruning step belongs in the issue body at the time the final phase closes.
+
 ### Anti-patterns
 
 **Leaving Phase 1 instructions in place after Phase 1 completes.** Any agent dispatched against the issue will re-run Phase 1. Even a single re-run can create several duplicate sub-issues that require manual cleanup.
@@ -114,7 +116,7 @@ The merged PR list serves the same function as the duplicate issue list in Phase
 
 The duplicate cleanup required: reading 6 new issues, identifying their canonical originals, and manually closing each with a "duplicate of" reference. Total cleanup time: ~25 minutes.
 
-**Mechanism confirmed:** The fix was a one-line change to the issue body header. No code change, no cron adjustment, no memory update. The purely text-based intervention stopped the re-audit loop immediately and completely. This confirms the root cause: the agent was following the instructions as written, and the instructions as written directed it to audit.
+**Mechanism confirmed:** The fix was a rewrite of the issue body header to read "Phase 1 COMPLETE — do NOT re-run audit, implement #N next." Crucially, the rewrite *replaced* the Phase 1 audit instructions — it did not merely prepend a checkmark above them. Agents dispatched after the rewrite no longer saw "audit the codebase" in the body and therefore did not audit. This confirms both the mechanism (agents follow what the body says) and the completeness requirement: the rewrite must remove or overwrite the old instructions, not just add a header marker on top.
 
 **Generalization:** Any issue body that describes a read-only survey, analysis, or audit step will produce this failure mode when dispatched against an autonomous agent after the survey is complete. The pattern is not specific to the autogent codebase — it is a structural consequence of using issue bodies as agent prompts with phase-based instructions.
 
