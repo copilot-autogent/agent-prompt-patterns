@@ -3,7 +3,7 @@ title: "Explicit Skip Permission"
 category: "prompt-structure"
 evidenceLevel: "moderate"
 summary: "Explicitly state in recurring-task prompts that producing no output is a valid outcome. Without this, agents manufacture spurious updates — hallucinating minor changes or repeating prior content reworded to appear fresh."
-relatedPatterns: ["empirical-validation-loop", "feedback-loop-via-memory", "observer-actor-separation"]
+relatedPatterns: ["empirical-validation-loop", "feedback-loop-via-memory", "observer-actor-separation", "phase-gated-epic-body"]
 tags: ["scheduled-tasks", "recurring-agents", "hallucination", "output-stability", "no-op", "idempotency", "prompt-design"]
 ---
 
