@@ -3,7 +3,7 @@ title: "Scope Boundary Declaration"
 category: "task-design"
 evidenceLevel: "moderate"
 summary: "Emit an explicit IN/OUT scope declaration before making any changes, then enforce it throughout execution by noting out-of-scope discoveries rather than fixing them"
-relatedPatterns: ["long-horizon-task-phasing", "bounded-autonomy", "uncertainty-gated-irreversible-action", "pre-commit-planning-phase"]
+relatedPatterns: ["long-horizon-task-phasing", "bounded-autonomy", "uncertainty-gated-irreversible-action", "pre-commit-planning-phase", "phase-gated-epic-body"]
 tags: ["scope", "task-design", "boundaries", "blast-radius", "yagni", "pr-hygiene", "no-unused-surface", "task-intake"]
 ---
 

@@ -3,7 +3,7 @@ title: "Dedup-Search Before Autonomous Issue Filing"
 category: "agent-autonomy"
 evidenceLevel: "strong"
 summary: "Before filing any new issue in an autonomous cron, perform two independent keyword searches against open AND closed issues. Without a dedup check, agents refile already-resolved items after memory loss, produce same-concept duplicates with different titles, and cause cross-cron collisions — each variant wastes a full sprint cycle on already-shipped work."
-relatedPatterns: ["strategic-recall-before-ideation", "constraint-falsification", "circuit-breaker", "staggered-task-spawning"]
+relatedPatterns: ["strategic-recall-before-ideation", "constraint-falsification", "circuit-breaker", "staggered-task-spawning", "phase-gated-epic-body"]
 tags: ["autonomy", "deduplication", "issue-filing", "backlog", "search", "idempotency", "cron", "memory-loss"]
 ---
 
