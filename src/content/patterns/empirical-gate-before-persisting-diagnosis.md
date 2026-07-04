@@ -61,7 +61,7 @@ The higher the reach of the storage, the higher the bar before writing:
 |---|---|---|
 | Session notes / scratch | Current session only | Low — hypothesis-as-hypothesis is fine |
 | Persistent memory topic | Recalled on demand, scoped | Moderate — flag unconfirmed claims |
-| Issue / PR comment | Future sprint agents reading that thread | Moderate — distinguish symptom from cause |
+| Issue / PR comment | Future sprint agents reading that thread | Moderate — distinguish symptom from cause; avoid including auth/credential details in public threads |
 | `CONTEXT.md` / `PLAYBOOK.md` | Every future session, every sprint agent | **High — observable confirmation required, or tag `[UNCONFIRMED]`** |
 
 ### Handling Unconfirmed Hypotheses
@@ -72,23 +72,28 @@ When you cannot run a falsifying check (no access to the environment, no reprodu
 # GOOD — records the symptom and open question:
 [UNCONFIRMED: observed FORBIDDEN errors from board-sync subprocess. Cause unknown —
 possible token scope, possible API rate-limit. Check with: run get_me from the same
-subprocess; if it succeeds, the token is present and scope is not the cause.]
+subprocess; if it succeeds, token presence is confirmed, but scope-specific permission
+errors remain possible — check the specific endpoint's required scopes separately.]
 
 # BAD — asserts causation before falsification:
 GITHUB_API_TOKEN absent in subprocess env → board-sync broken (FORBIDDEN errors).
 ```
 
-The `[UNCONFIRMED]` tag is a contract: it tells future agents that this entry requires validation before acting on it. It also preserves the observation (the symptom is real) while refusing to assert the cause.
+The `[UNCONFIRMED]` tag is a **convention**, not a machine-enforced schema. Memory and retrieval systems will surface tagged entries alongside confirmed facts — the tag only works if agents reading the file treat it as a gate. When recording an `[UNCONFIRMED]` entry, always include an explicit verification step ("check with: …") so the convention has teeth. It preserves the observation (the symptom is real) while refusing to assert the cause.
 
 ### Retractions Cost More Than Getting It Right Once
 
-A confirmed wrong entry in `CONTEXT.md` cannot be safely deleted — future agents may have already anchored on it, and a deletion without explanation is confusing. The least-cost correction is a retraction note appended to the original:
+A confirmed wrong entry in `CONTEXT.md` cannot be safely deleted without context — future agents may have already anchored on it. The options, in order of preference:
 
-> ✅ **Correction (date)**: the above was falsified empirically — [what actually happened].
+1. **Replace and archive (preferred for push-injected files)**: rewrite the entry with the correct causal chain and archive the old one (e.g., move to a `context-archive-YYYY` memory topic with a dated note). This keeps the push file clean while preserving the audit trail in a pull-retrieval system.
 
-But this retraction note is permanent overhead: the original wrong claim **and** the retraction note both persist in the file, costing 4–8 lines of context indefinitely. The correction note becomes a fixture of the file, injected into every sprint agent's system prompt for the life of the project.
+2. **Retraction note (fallback when replacement is ambiguous)**: append a retraction immediately after the original entry:
+   > ✅ **Correction (date)**: the above was falsified empirically — [what actually happened].
+   But be aware: both the wrong claim and the retraction note now persist in the file, costing 4–8 lines of context indefinitely, and some agents will anchor on whichever they read first.
 
-The only way to avoid this cost is to not write the wrong claim in the first place.
+**Concurrent writers**: in multi-sprint systems, multiple agents may independently form and "confirm" conflicting diagnoses about the same symptom. Before writing a confirmed causal claim to a shared push file, check whether another agent has already recorded a diagnosis for the same symptom — conflicting confirmed claims are harder to resolve than a single wrong claim.
+
+The only way to avoid all these costs is to not write the wrong claim in the first place.
 
 ## Anti-patterns
 
@@ -104,7 +109,7 @@ The only way to avoid this cost is to not write the wrong claim in the first pla
 
 **autogent CONTEXT.md — subprocess token diagnosis (2026-07-02)**: A causal claim was written to `CONTEXT.md` stating that `GITHUB_API_TOKEN` was absent in subprocess environments, causing board-sync to fail with FORBIDDEN errors. The hypothesis was falsified the same day: the reconciler successfully ran 17 ProjectV2 board mutations with 0 errors from the same subprocess class. The actual root cause was a 20-minute latency timeout during a bulk board read (838 items, 9 pages), not an auth block. The falsifying check was identified after the fact: `get_me` had succeeded in the same subprocess during the failure window, which would have ruled out token absence before writing. The retraction note (`✅ Correction`) now costs 3–4 lines of `CONTEXT.md` budget indefinitely and injects into every sprint agent's context.
 
-**Pattern**: The check that would have prevented this — "if the token is absent, ALL API calls should fail; `get_me` succeeded" — is a one-line falsifying observable. It required no new tooling, no environment change, only a check against already-available evidence. The falsification gate was the missing step.
+**Pattern**: The check that would have prevented this — "if the token is absent, ALL API calls should fail; `get_me` succeeded" — is a one-line falsifying observable that rules out token *absence*. It does not, by itself, rule out endpoint-specific scope restrictions (a token can be present but lack write permission on ProjectV2 nodes). A complete falsification would chain the checks: (1) `get_me` → token present; (2) a minimal ProjectV2 query → scope sufficient. The broader lesson is that a falsifying observable must distinguish the *specific* claim, not just a superordinate one. The falsification gate was the missing step; `get_me` was the right first check, but the analysis should have listed scope as a remaining open question rather than closing the diagnosis.
 
 **General principle**: errors in push-injected files are not corrected by editing — they are corrected by retractions that compound the original cost. The asymmetry between the cost of getting it right once versus the cost of a permanent retraction note is what makes the falsification gate worth its friction even under time pressure.
 
