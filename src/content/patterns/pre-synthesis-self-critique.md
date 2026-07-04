@@ -37,7 +37,7 @@ It does not apply to:
 
 ## Solution
 
-**Add a mandatory `## Self-Critique` section to each agent's system prompt. Collect these critiques alongside primary answers in the synthesizer. Address genuine unresolved risks explicitly; escalate critiques that are shared across 3+ agents.**
+**Add a mandatory `## Self-Critique` section to each agent's system prompt. Collect these critiques alongside primary answers in the synthesizer. Address genuine unresolved risks explicitly; escalate critiques shared across 2+ agents, and treat those shared across 3+ agents as HIGH-confidence risks.**
 
 ### Agent system prompt addition
 
@@ -60,7 +60,7 @@ The three prompts serve different functions:
 
 **Step 1: Process all self-critiques before synthesizing primary answers.**
 
-Because self-critiques appear in the same free-form response as primary answers (as a `## Self-Critique` section), the synthesizer reads them by extracting the section from each agent's full output. Concretely: collect the `## Self-Critique` sections first, form a mental model of the risk landscape, then return to read the full primary analyses against that landscape. This sequencing prevents anchoring — a synthesizer that reads three converging primary answers before the critiques will unconsciously discount the critiques as minority views.
+Because self-critiques appear in the same free-form response as primary answers (as a `## Self-Critique` section), the synthesizer reads them by extracting the section from each agent's full output. The synthesizer should extract case-insensitively and accept common heading variants (`## self-critique`, `**Self-Critique:**`, `### Self-Critique`). Concretely: collect the `## Self-Critique` sections first, form a mental model of the risk landscape, then return to read the full primary analyses against that landscape. This sequencing prevents anchoring — a synthesizer that reads three converging primary answers before the critiques will unconsciously discount the critiques as minority views.
 
 **Step 2: For each critique that points to a genuine unresolved risk, explicitly address it.**
 
@@ -84,9 +84,9 @@ Averaging is not addressing. A synthesis that says "some agents expressed concer
 
 "High-stakes / irreversible" includes: merging to production, deleting data, architectural changes that require coordinated rollout, and any action where the cost of being wrong exceeds the cost of a delay.
 
-**Step 4: Report the critique landscape in synthesis output.**
+**Step 4: Report the critique landscape in synthesis output (recommended; omit when output schema is constrained).**
 
-The synthesis output should include a summary of self-critiques collected and how each was resolved. This serves as an audit trail and prevents the pattern from being a paper exercise:
+When the synthesis output format permits it, include a summary of self-critiques collected and how each was resolved. This serves as an audit trail and prevents the pattern from being a paper exercise. Where the downstream consumer requires a constrained output schema (e.g., structured JSON, single-paragraph recommendation), embed the critique resolution as an internal reasoning step and surface only unresolved escalations in the final output:
 
 ```
 ## Critique Resolution
