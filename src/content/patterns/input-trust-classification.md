@@ -3,7 +3,7 @@ title: "Input Trust Classification"
 category: "agent-autonomy"
 evidenceLevel: "strong"
 summary: "Before acting on any input, classify its trust level based on source provenance and apply the corresponding validation policy. Agents that treat all input sources as equally trustworthy create injection vectors: adversarial content in a fetched URL or an issue body can hijack agent behavior by mimicking system instructions."
-relatedPatterns: ["input-provenance-tagging", "uncertainty-gated-irreversible-action", "tool-error-triage", "bounded-autonomy", "privilege-aware-tool-granting"]
+relatedPatterns: ["input-provenance-tagging", "uncertainty-gated-irreversible-action", "tool-error-triage", "bounded-autonomy", "privilege-aware-tool-granting", "prompt-injection-content-guard"]
 tags: ["security", "prompt-injection", "trust-boundary", "input-validation", "agent-autonomy", "ambient-authority"]
 ---
 
