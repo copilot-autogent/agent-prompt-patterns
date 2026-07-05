@@ -54,7 +54,7 @@ Even in open-scope work, a goal-alignment checkpoint is useful — it surfaces w
 
 Before beginning, record the canonical goal statement in a persistent location:
 - For session-based work: write it in the plan file or structured task header
-- For autonomous loop tasks: save it to memory at the start of the first sprint
+- For autonomous loop tasks: save it to a **durable** location — persistent memory, a pinned issue, or a configuration file — so it survives restarts and cron tick boundaries; in-context memory is insufficient across separate runs
 - For sprint agents: copy the verbatim issue title + problem statement into the plan preamble
 
 The anchor must be the **verbatim original goal** — not a paraphrase, not the current sub-goal. Paraphrases introduce drift at the anchor itself, defeating the mechanism.
@@ -62,9 +62,9 @@ The anchor must be the **verbatim original goal** — not a paraphrase, not the 
 ```
 ## Goal anchor (DO NOT PARAPHRASE)
 "Add a search feature to the dashboard so users can find panels by name."
-Authorized scope: search input, result display, panel name matching.
-NOT authorized: filter sidebar, saved searches, analytics.
 ```
+
+The verbatim goal is the anchor. Any scope boundaries ("authorized: X, not authorized: Y") should be sourced from the original request or a principal-approved scope declaration — not inferred by the agent, as agent-inferred scope boundaries can themselves introduce drift.
 
 ### Step 2 — Re-read the anchor at milestone boundaries
 
@@ -104,7 +104,7 @@ Continuing without surfacing detected drift is the failure mode. The correction 
 For long-running autonomous loops (weekly cadence, ideation→sprint cycles):
 
 1. Track how many consecutive feature additions have shipped without a consolidation, curation, or information-architecture pass
-2. If the ratio exceeds approximately 5:1, pause feature addition
+2. If the ratio exceeds approximately 5:1 **and** no curation or information-architecture work has shipped in the past 2+ weeks, pause feature addition
 3. File a consolidation sprint before resuming feature work
 4. Gate new-feature issues: each must answer *"which user question does this serve, and is that question still in scope?"* — this kills off-thesis accretion at the source
 
