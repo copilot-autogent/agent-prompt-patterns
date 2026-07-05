@@ -3,7 +3,7 @@ title: "Input Provenance Tagging"
 category: "agent-autonomy"
 evidenceLevel: "moderate"
 summary: "Tag all external content with provenance markers before it enters the model's context. Structural source labels (\"[UNTRUSTED WEB CONTENT]\") give the model a durable signal to distinguish data it should process from instructions it should follow — reducing ambient prompt injection without relying solely on syntactic pattern classifiers."
-relatedPatterns: ["bounded-autonomy", "privilege-aware-tool-granting", "side-effect-verification"]
+relatedPatterns: ["bounded-autonomy", "privilege-aware-tool-granting", "side-effect-verification", "prompt-injection-content-guard"]
 tags: ["security", "prompt-injection", "ambient-authority", "tool-use", "agent-autonomy", "trust-boundary", "content-tagging"]
 ---
 

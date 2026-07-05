@@ -3,7 +3,7 @@ title: "Privilege-Aware Tool Granting"
 category: "agent-autonomy"
 evidenceLevel: "emerging"
 summary: "Before starting any agent session, explicitly declare the minimum toolset required for the task and block all other tools at runtime. When a security incident occurs, the agent's blast radius is bounded by what it was allowed to touch — not by what it could have touched."
-relatedPatterns: ["bounded-autonomy", "side-effect-verification", "observer-actor-separation"]
+relatedPatterns: ["bounded-autonomy", "side-effect-verification", "observer-actor-separation", "prompt-injection-content-guard"]
 tags: ["security", "tool-use", "least-privilege", "autonomy", "prompt-injection", "authorization", "agent-autonomy"]
 ---
 
