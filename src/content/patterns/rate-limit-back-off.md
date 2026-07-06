@@ -3,7 +3,7 @@ title: "Rate-Limit Back-Off"
 category: "agent-autonomy"
 evidenceLevel: "moderate"
 summary: "When a tool call returns a rate-limit error (HTTP 429), apply structured exponential back-off with jitter before retrying rather than retrying immediately or aborting. Immediate retries amplify quota exhaustion; immediate aborts discard work that a short wait would have recovered."
-relatedPatterns: ["circuit-breaker", "tool-error-triage", "uncertainty-gated-irreversible-action"]
+relatedPatterns: ["circuit-breaker", "tool-error-triage", "uncertainty-gated-irreversible-action", "graceful-capability-degradation"]
 tags: ["rate-limiting", "backoff", "retry", "429", "api", "resilience", "exponential-backoff", "jitter", "error-handling"]
 ---
 

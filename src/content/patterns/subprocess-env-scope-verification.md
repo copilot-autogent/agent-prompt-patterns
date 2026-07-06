@@ -3,7 +3,7 @@ title: "Subprocess Environment Scope Verification"
 category: "agent-autonomy"
 evidenceLevel: "strong"
 summary: "Environment variables present in the parent/PID1 process are NOT automatically propagated to spawned bash subprocesses. An agent that reads an env var from a subprocess may silently see it as empty — even though it exists in the parent — and then incorrectly diagnose an auth failure, waste turns on token debugging, or write misleading root-cause notes into persistent memory. Verify env vars in-scope (in the actual subprocess context), prefer MCP/tool-layer auth over subprocess shell calls, and falsify before escalating."
-relatedPatterns: ["constraint-falsification", "empirical-validation-loop", "bounded-autonomy", "decision-ownership", "tool-error-triage"]
+relatedPatterns: ["constraint-falsification", "empirical-validation-loop", "bounded-autonomy", "decision-ownership", "tool-error-triage", "graceful-capability-degradation"]
 tags: ["environment", "subprocess", "auth", "tokens", "credentials", "scope", "falsification", "debugging", "bash", "propagation"]
 ---
 
