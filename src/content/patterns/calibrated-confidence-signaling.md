@@ -42,7 +42,7 @@ Assign a confidence tier to every claim before expressing it. Three tiers cover 
 
 > "My working hypothesis is that the token is absent in the subprocess env. This relies on 3-session-old context. Verify by reading `/proc/1/environ` before acting."
 
-The tier names are not required in the output. What is required is that the distinction *appears in the text* — hedging language, sourcing, or an explicit staleness note. A claim with no qualification reads as High; claims about system state that haven't been directly verified must carry a visible qualifier.
+The tier names are not required in the output. What is required is that the distinction *appears in the text* — hedging language, sourcing, or an explicit staleness note. ⚠️ **A claim with no qualification will be *read as* high confidence by consumers** — even if the agent's internal epistemic state is lower. Unqualified prose is not permission to omit hedging; it is a description of what consumers will infer. Claims about system state that haven't been directly verified must carry a visible qualifier.
 
 ### 2. Never Present an Inference as an Observation
 
@@ -77,7 +77,7 @@ When the evidence basis is weak or stale, say so: "Based on a run from 4 hours a
 
 ### 4. Flag Time-Sensitive and Context-Stale Claims
 
-Claims that depend on state verified more than N tool-calls ago, or that crossed a context boundary, carry an implicit staleness risk. Add an explicit marker:
+Claims that depend on state that could have changed since it was verified carry an implicit staleness risk. The threshold should be calibrated to state volatility, not raw time or tool-call count: deployment status and token validity can go stale within a single long-running tool call; static code structure may remain valid across many context windows. When in doubt, add an explicit marker:
 
 > "As of my last check [N steps ago], the deploy was in progress. Re-verify before treating this as the current state."
 
@@ -95,7 +95,7 @@ Before writing any confidence-rated claim to persistent memory or bootstrap file
 
 **Hedging by implication**: the agent knows a claim is uncertain but expects the consumer to infer this from context ("obviously I can't know for sure"). Explicit calibration cannot be implicit. If the uncertainty doesn't appear in the text, it isn't communicated.
 
-**Over-hedging low-stakes claims**: applying uncertainty language uniformly to every claim including trivially verifiable ones ("I *believe* the file exists…") dilutes the signal. Calibrated confidence means reserving explicit uncertainty markers for claims that are *actually uncertain* — not applying them everywhere as a stylistic tic.
+**Over-hedging low-stakes claims**: applying uncertainty language uniformly to every claim including trivially verifiable ones ("I *believe* the file exists…") dilutes the signal. Calibrated confidence means reserving explicit uncertainty markers for claims that are *actually uncertain* — claims about external system state, inferences from indirect signals, or conclusions that depend on stale context. The boundary is: if a consumer could verify the claim in under five seconds with no side effects (e.g., reading a literal file path, looking at a constant in code), hedging adds noise. If verification requires an API call, environmental access, or relies on evidence from a prior session, an explicit qualifier is warranted.
 
 **Stale confidence recycling**: an agent forms a high-confidence claim based on a direct observation, then states the same claim five tool-calls later — without re-verifying and without a staleness marker — using the original confidence tier. The confidence tier describes the state of evidence *at the time of the statement*, not at the time of the original observation.
 
