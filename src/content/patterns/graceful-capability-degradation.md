@@ -49,10 +49,10 @@ Before beginning any task with external dependencies, mentally map each dependen
 | **Minimal** | Only cached or static data available | Serve what exists, flag staleness explicitly |
 | **None** | Task cannot proceed without primary capability | Surface the blocker, save state, wait |
 
-For example, triggering a GitHub Pages deploy has three tiers:
-- **Full**: `workflow_dispatch` API succeeds → dispatch directly
-- **Reduced**: `COPILOT_SDK_AUTH_TOKEN` cannot dispatch (403) → push a no-op nudge commit to trigger `on: push`
-- **None**: No write access to the repository at all → surface the blocker, wait for manual trigger
+For example, triggering a CI/CD deploy has three tiers:
+- **Full**: direct dispatch API succeeds → use it
+- **Reduced**: direct dispatch is unavailable (e.g., 403 due to token scope) → use an alternative trigger (e.g., a commit nudge on the push-trigger branch), and communicate the tradeoff
+- **None**: no write access at all → surface the blocker, wait for manual trigger
 
 ### 2. Detect failure at the edge, not the center
 
@@ -61,13 +61,15 @@ Check capability availability at the point of first use — before committing to
 When detecting environment-scoped limitations (e.g., subprocess token lacking required permissions), verify first:
 
 ```
-Before issuing API calls that require GITHUB_API_TOKEN:
-- Check whether GITHUB_API_TOKEN is available in the current subprocess env
-- If absent: fall back to MCP GitHub tools (which use the MCP server's own auth)
-- Do NOT attempt the call and let it 403
+Before issuing API calls that require elevated auth:
+- Check whether the required credential/token is available in the current execution env
+- If absent: go directly to the fallback (e.g., MCP tools, alternate auth path)
+- Do NOT attempt the call and let it fail — a known limitation should route to fallback at the edge
 ```
 
 This pairs directly with the `subprocess-env-scope-verification` pattern: verify scope before use, not after failure.
+
+> **Two entry points**: For *unknown* failures, attempt the primary and let circuit-breaker determine whether to retry or open. For *known* env-scoped limitations (e.g., a token definitely absent from the subprocess env), skip the primary attempt and route directly to the fallback tier — no wasted auth error needed to discover an already-known constraint.
 
 ### 3. Fall back transparently, not silently
 
@@ -77,9 +79,9 @@ Template:
 > "Primary [capability] is unavailable ([reason]). Falling back to [alternative] — [tradeoff]. Same goal, [difference]."
 
 Real examples from production:
-- *"Primary deploy API is unavailable (403 — SDK token cannot `workflow_dispatch`). Falling back to commit-nudge method to trigger deploy — same outcome, slightly slower."*
-- *"`GITHUB_API_TOKEN` is absent from subprocess env. Falling back to MCP GitHub tools for this API call — identical result, different auth path."*
-- *"Pages deploy backend is timing out (GitHub-side degradation). Last-good build is live and serving users. Waiting for backend recovery rather than retrying aggressively."*
+- *"Primary deploy API is unavailable (dispatch not authorized). Falling back to commit-nudge method to trigger deploy — same outcome, slightly slower."*
+- *"Primary auth path is absent from subprocess env. Falling back to MCP tool auth for this API call — identical result, different auth path."*
+- *"Deploy backend is timing out (provider-side degradation). Last-good build is live and serving users. Waiting for backend recovery rather than retrying aggressively."*
 
 ### 4. Scope the degradation narrowly
 
@@ -104,15 +106,22 @@ Graceful capability degradation answers: *what should I do next?*
 They compose naturally:
 
 ```
+For unknown failures:
 1. Attempt primary capability
-2. On failure → circuit-breaker: is this a transient error worth retrying?
-   - Yes: retry with backoff (see rate-limit-back-off)
-   - No (circuit open): activate degraded mode
-3. Degraded mode → graceful-capability-degradation:
-   - Identify fallback tier
-   - Notify user
-   - Continue task on fallback
-4. On primary recovery → restore and notify
+2. On failure → circuit-breaker: is this transient or permanent?
+   - Transient: retry with backoff (see rate-limit-back-off)
+   - Permanent (circuit open): identify fallback tier, activate degraded mode
+
+For known env-scoped limitations (detected at edge before attempting):
+1. Verify capability availability at edge
+2. If unavailable: go directly to fallback tier (no wasted primary attempt)
+
+In degraded mode:
+3. Notify user explicitly about degraded state and tradeoff
+4. Continue task at reduced tier
+
+On recovery:
+5. Restore primary capability, notify user
 ```
 
 ### Do not attempt irreversible actions without confirmation in degraded mode
@@ -122,8 +131,9 @@ Degraded mode changes the risk profile of actions. A task that was safe to execu
 - Stale cached data → confirm before using as input to a write operation
 - Reduced-scope auth → confirm before actions that appear to succeed but may have unexpected side effects
 - Slower secondary path → confirm before long-running operations where the user may have assumed instant execution
+- Additive fallbacks (e.g., triggering a workflow via a commit nudge) are generally lower-risk than destructive writes, but must still be communicated explicitly so the user understands the tradeoff (an extra commit in history, a slightly different trigger mechanism)
 
-Pair with `uncertainty-gated-irreversible-action` for any action in degraded mode that cannot be reversed.
+Pair with `uncertainty-gated-irreversible-action` for any action in degraded mode that cannot be reversed, particularly deletions, overwrites, or writes from stale/cached data.
 
 ## Evidence
 
@@ -140,17 +150,15 @@ Factor-dashboard, shogi-srs, and realestate-radar all encountered GitHub Pages `
 
 This is graceful capability degradation operating at the infrastructure level: the site itself degrades from "latest build" to "last-good build" without going dark.
 
-**2. Two-token architecture fallback** (autogent main repo, 2026-07-02)
+**2. Dual-token auth path fallback** (agent runtime, 2026-07-02)
 
-The autogent agent has two GitHub auth paths: `GH_TOKEN` (scoped to `copilot-autogent/*`) and `GITHUB_API_TOKEN` (covering the main autogent repo). Subprocess environments do not propagate `GITHUB_API_TOKEN`.
+An agent with two GitHub auth paths — one scoped narrowly (subprocess env) and one broader (MCP server auth) — needed to issue API calls in a subprocess context where the elevated token was not propagated.
 
-The documented correct behavior: when subprocess env lacks `GITHUB_API_TOKEN`, fall back to MCP GitHub tools (which use the MCP server's own auth token) — not to fail and report "missing token." This is graceful degradation in practice: detect primary auth path is unavailable in the current execution context, switch to the secondary auth path, continue the task.
+The documented correct behavior: when the subprocess env lacks the required elevated token, fall back to MCP tools (which use the server's own auth) rather than failing and reporting "missing token." This is graceful degradation in practice: detect primary auth path is unavailable in the current execution context, switch to the secondary auth path, continue the task.
 
-**3. `workflow_dispatch` 403 → commit-nudge fallback** (multiple repos, recurring)
+**3. Direct dispatch 403 → commit-nudge fallback** (multiple repos, recurring)
 
-`COPILOT_SDK_AUTH_TOKEN` cannot issue `workflow_dispatch` (returns 403 — "Resource not accessible by personal access token"). The documented fallback: push a no-op nudge commit to `main`, triggering the workflow via `on: push` instead. Same outcome (workflow runs), different mechanism (commit-triggered vs. API-dispatched).
-
-This is textbook capability degradation: full capability = direct API dispatch; reduced capability = commit-nudge; the task completes at the reduced tier with the tradeoff (one extra commit in history) made explicit.
+A CI/CD dispatch API call returned 403 — "Resource not accessible by personal access token" — because the token lacked dispatch permissions. The documented fallback: push a no-op nudge commit to the default branch, triggering the workflow via its push trigger instead. Same outcome (workflow runs), different mechanism (commit-triggered vs. API-dispatched), with the tradeoff (one extra commit in history) made explicit to the user.
 
 **Evidence level: strong** — three independent incidents across different failure modes (infrastructure outage, env scoping, auth scope limitation), each documented with observable production outcomes. The pattern was not designed speculatively; it was extracted from repeated successful incident recovery.
 
@@ -184,5 +192,5 @@ This is textbook capability degradation: full capability = direct API dispatch; 
 - **[Circuit Breaker for Recurring Agent Tasks](/agent-prompt-patterns/patterns/circuit-breaker)** — answers *when* to stop retrying the primary capability; graceful capability degradation answers *what to do next* — they compose in sequence: circuit opens → activate degraded mode
 - **[Tool Error Triage](/agent-prompt-patterns/patterns/tool-error-triage)** — diagnoses tool errors to correctly classify which degradation tier applies; without triage, agents may activate the wrong fallback or skip degradation entirely
 - **[Rate Limit Back-off](/agent-prompt-patterns/patterns/rate-limit-back-off)** — a specific instance of graceful degradation for rate-limited APIs: the degraded mode is a slower retry schedule or a cached result, and the primary is restored once the rate window expires
-- **[Subprocess Env Scope Verification](/agent-prompt-patterns/patterns/subprocess-env-scope-verification)** — implements "detect failure at the edge": verify that the subprocess environment has the required tokens and permissions before issuing calls that depend on them, enabling clean degradation to MCP-auth fallbacks
+- **[Subprocess Env Scope Verification](/agent-prompt-patterns/patterns/subprocess-env-scope-verification)** — implements "detect failure at the edge": verify that the subprocess environment has the required tokens and permissions before issuing calls that depend on them, enabling clean degradation to alternative auth paths
 - **[Uncertainty-Gated Irreversible Action](/agent-prompt-patterns/patterns/uncertainty-gated-irreversible-action)** — gates irreversible actions on explicit confirmation; in degraded mode, the uncertainty threshold for what counts as "irreversible" is lower, making this pattern a necessary complement for write operations
