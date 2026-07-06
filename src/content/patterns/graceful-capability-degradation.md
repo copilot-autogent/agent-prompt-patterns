@@ -46,7 +46,7 @@ Before beginning any task with external dependencies, mentally map each dependen
 |------|-----------|----------|
 | **Full** | Primary tool/service available | Normal operation |
 | **Reduced** | Secondary path available (slower, fewer features, lower quality) | Degrade gracefully, notify user |
-| **Minimal** | Only cached or static data available | Serve what exists, flag staleness explicitly |
+| **Minimal** | Only cached or static data available | Validate provenance/scope first (confirm cached data is for the same subject, tenant, and auth context); serve what exists with staleness flag |
 | **None** | Task cannot proceed without primary capability | Surface the blocker, save state, wait |
 
 For example, triggering a CI/CD deploy has three tiers:
@@ -133,7 +133,7 @@ Degraded mode changes the risk profile of actions. A task that was safe to execu
 - Stale cached data → confirm before using as input to a write operation
 - Reduced-scope auth → confirm before actions that appear to succeed but may have unexpected side effects
 - Slower secondary path → confirm before long-running operations where the user may have assumed instant execution
-- Additive fallbacks (e.g., triggering a workflow via a commit nudge) are generally lower-risk than destructive writes, but must still be communicated explicitly so the user understands the tradeoff (an extra commit in history, a slightly different trigger mechanism)
+- Additive fallbacks (e.g., triggering a workflow via a commit nudge) are generally lower-risk than destructive writes, but must still be communicated explicitly, and must be idempotency-checked first: if the primary may have partially succeeded before the error (e.g., timeout-after-accept), re-confirm that the action hasn't already been applied before pushing the fallback trigger — a double-trigger can cause duplicate workflow runs or double-commits
 
 Pair with `uncertainty-gated-irreversible-action` for any action in degraded mode that cannot be reversed, particularly deletions, overwrites, or writes from stale/cached data.
 
@@ -158,7 +158,7 @@ An agent with two GitHub auth paths — one scoped narrowly (subprocess env) and
 
 The documented correct behavior: when the subprocess env lacks the required elevated token, fall back to MCP tools (which use the server's own auth) rather than failing and reporting "missing token." This is graceful degradation in practice: detect primary auth path is unavailable in the current execution context, switch to the secondary auth path, continue the task.
 
-> **Actor-equivalence check**: before using a broader auth path for write operations, verify that the fallback's identity and permissions are appropriate for the action. A server-level MCP token may have wider permissions than the scoped subprocess token — confirm that the write operation is authorized to proceed under the broader identity, and communicate the permission change to the user. This applies any time a fallback widens the acting auth scope, not just to the MCP case.
+> **Actor-equivalence check**: before using a broader auth path for write operations, verify that the fallback's identity and permissions are appropriate for the action. A server-level MCP token may have wider permissions than the scoped subprocess token. For read operations, using the broader auth is generally safe. For write operations, **require explicit user approval** before proceeding under the broader identity — do not apply agent-side judgment alone. Communicate the permission scope change clearly: *"Falling back to server-level auth for this write operation — identity and permissions differ from the scoped subprocess token. Please confirm this is acceptable."* This applies any time a fallback widens the acting auth scope.
 
 **3. Direct dispatch 403 → commit-nudge fallback** (multiple repos, recurring)
 
