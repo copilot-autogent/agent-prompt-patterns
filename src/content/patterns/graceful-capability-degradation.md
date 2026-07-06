@@ -51,8 +51,10 @@ Before beginning any task with external dependencies, mentally map each dependen
 
 For example, triggering a CI/CD deploy has three tiers:
 - **Full**: direct dispatch API succeeds → use it
-- **Reduced**: direct dispatch is unavailable (e.g., 403 due to token scope) → use an alternative trigger (e.g., a commit nudge on the push-trigger branch), and communicate the tradeoff
-- **None**: no write access at all → surface the blocker, wait for manual trigger
+- **Reduced**: direct dispatch is denied (e.g., 403 due to token scope, not backend outage) → use an alternative trigger (e.g., a commit nudge on the push-trigger branch) *if the repository allows the push and the `on: push` trigger is semantically equivalent for this workflow*; communicate the tradeoff (extra commit in history)
+- **None**: backend is fully degraded, or no write access, or dispatch and push-trigger have non-equivalent semantics → serve the last-good state, surface the blocker, wait for recovery
+
+> **Key distinction**: a commit-nudge as fallback addresses *token-scope* failures (dispatch forbidden to this token) — not *backend* failures (deploy backend down). When the deploy backend is unavailable, both `workflow_dispatch` and push converge on the same failing backend; the correct degraded mode is to continue serving the last-good build and wait for backend recovery, not to push nudge commits that will also fail.
 
 ### 2. Detect failure at the edge, not the center
 
@@ -145,8 +147,8 @@ Factor-dashboard, shogi-srs, and realestate-radar all encountered GitHub Pages `
 
 - The live site continues serving the last-good build (Pages CDN stays up; only new deploys stall)
 - The agent does not declare "deploy failed" or close the issue
-- Recovery is triggered via a nudge commit (the `on: push` fallback) rather than continuous `workflow_dispatch` retries
-- Full capability (direct dispatch) is restored once the backend recovers
+- Recovery is awaited (a nudge commit triggers the next deploy attempt once the backend recovers — but nudge commits do not bypass the backend; they simply queue a new deploy run that will succeed after recovery)
+- Full capability (new deploys publishing) is restored once the backend recovers
 
 This is graceful capability degradation operating at the infrastructure level: the site itself degrades from "latest build" to "last-good build" without going dark.
 
@@ -155,6 +157,8 @@ This is graceful capability degradation operating at the infrastructure level: t
 An agent with two GitHub auth paths — one scoped narrowly (subprocess env) and one broader (MCP server auth) — needed to issue API calls in a subprocess context where the elevated token was not propagated.
 
 The documented correct behavior: when the subprocess env lacks the required elevated token, fall back to MCP tools (which use the server's own auth) rather than failing and reporting "missing token." This is graceful degradation in practice: detect primary auth path is unavailable in the current execution context, switch to the secondary auth path, continue the task.
+
+> **Actor-equivalence check**: before using a broader auth path for write operations, verify that the fallback's identity and permissions are appropriate for the action. A server-level MCP token may have wider permissions than the scoped subprocess token — confirm that the write operation is authorized to proceed under the broader identity, and communicate the permission change to the user. This applies any time a fallback widens the acting auth scope, not just to the MCP case.
 
 **3. Direct dispatch 403 → commit-nudge fallback** (multiple repos, recurring)
 
