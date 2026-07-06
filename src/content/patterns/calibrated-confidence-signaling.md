@@ -15,7 +15,7 @@ The failure mode is structural: language models default to declarative phrasing 
 
 ## Context
 
-This pattern applies at every point where an agent is about to state a factual claim — in a response to a user, in a tool call argument, in a summary written to memory, or in a comment on a PR or issue. It is most critical when:
+This pattern applies at every point where an agent is about to state a factual claim in free-form text — in a response to a user, in a rationale or summary written to memory, or in a comment on a PR or issue. It is most critical when:
 
 - The claim will be consumed by another agent (orchestrator, sprint, scheduled task) and used to make a decision
 - The claim will be written to persistent storage (memory, bootstrap files, issue threads) that outlives the current session
@@ -87,7 +87,7 @@ The threshold for a staleness flag should be lower for claims about fast-changin
 
 ### 5. Pair With the Empirical Gate Before Persisting
 
-Before writing any confidence-rated claim to persistent memory or bootstrap files, apply `empirical-gate-before-persisting-diagnosis`: run a falsifying check and upgrade from inferred to confirmed if it passes. The phrasing distinction in this pattern makes that gate easier to apply — a claim already marked as an inference is harder to accidentally persist as a fact.
+Before writing any confidence-rated claim that is *inferred or medium/low confidence* to persistent memory or bootstrap files, apply `empirical-gate-before-persisting-diagnosis`: run a falsifying check and upgrade from inferred to confirmed if it passes. This rule is narrower than rule 1 — it applies only at the *write* step, not to every in-session claim. The phrasing distinction in this pattern makes that gate easier to apply — a claim already marked as an inference is harder to accidentally persist as a fact.
 
 ## Anti-patterns
 
@@ -95,7 +95,7 @@ Before writing any confidence-rated claim to persistent memory or bootstrap file
 
 **Hedging by implication**: the agent knows a claim is uncertain but expects the consumer to infer this from context ("obviously I can't know for sure"). Explicit calibration cannot be implicit. If the uncertainty doesn't appear in the text, it isn't communicated.
 
-**Over-hedging low-stakes claims**: applying uncertainty language uniformly to every claim including trivially verifiable ones ("I *believe* the file exists…") dilutes the signal. Calibrated confidence means reserving explicit uncertainty markers for claims that are *actually uncertain* — claims about external system state, inferences from indirect signals, or conclusions that depend on stale context. The boundary is: if a consumer could verify the claim in under five seconds with no side effects (e.g., reading a literal file path, looking at a constant in code), hedging adds noise. If verification requires an API call, environmental access, or relies on evidence from a prior session, an explicit qualifier is warranted.
+**Over-hedging low-stakes claims**: applying uncertainty language uniformly to every claim including trivially verifiable ones ("I *believe* the file exists…") dilutes the signal. Calibrated confidence means reserving explicit uncertainty markers for claims that are *actually uncertain* — claims about external system state, inferences from indirect signals, or conclusions that depend on stale context. A useful boundary: if the claim is about static, directly-readable facts (a literal constant in code, a file that exists in the working tree), hedging adds noise. If verification requires an external API call, environmental access, or relies on evidence from a prior session or context window, an explicit qualifier is warranted.
 
 **Stale confidence recycling**: an agent forms a high-confidence claim based on a direct observation, then states the same claim five tool-calls later — without re-verifying and without a staleness marker — using the original confidence tier. The confidence tier describes the state of evidence *at the time of the statement*, not at the time of the original observation.
 
