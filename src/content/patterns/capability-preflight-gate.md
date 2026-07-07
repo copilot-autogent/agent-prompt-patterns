@@ -104,7 +104,7 @@ workflow_dispatch scope      → GET /repos/{o}/{r}/actions/workflows \
                                   pre-flight — document as "best-effort" and
                                   treat a later 403 on dispatch as expected risk)
 node/npm version             → node --version && npm --version
-Write permission to path     → touch /tmp/probe-$$ && rm /tmp/probe-$$
+Write permission to path     → touch "$(mktemp -p /tmp)" && rm -f "$PROBE_FILE"
 System binary present        → which <binary>
 ```
 
@@ -112,14 +112,21 @@ System binary present        → which <binary>
 
 ```bash
 # Check repo write access without creating any refs
-PERM=$(curl -s -H "Authorization: Bearer $TOKEN" \
-       https://api.github.com/repos/{owner}/{repo} \
-       | grep -o '"push":[^,}]*' | head -1)
-[ "$PERM" = '"push":true' ] || \
+REPO_RESP=$(curl -s -w "\n%{http_code}" \
+            -H "Authorization: Bearer $TOKEN" \
+            https://api.github.com/repos/{owner}/{repo})
+HTTP=$(echo "$REPO_RESP" | tail -1)
+BODY=$(echo "$REPO_RESP" | head -n -1)
+if [ "$HTTP" != "200" ]; then
+  echo "GATE FAIL: repo API returned HTTP $HTTP (auth failure, not-found, or rate limit)"
+  exit 1
+fi
+PUSH=$(echo "$BODY" | grep -o '"push":[^,}]*' | head -1)
+[ "$PUSH" = '"push":true' ] || \
   { echo "GATE FAIL: token lacks push permission on {owner}/{repo}"; exit 1; }
 ```
 
-**workflow_dispatch note:** There is no reliable non-destructive API probe for whether a token can dispatch a workflow. `GET /repos/{o}/{r}/actions/workflows` confirms Actions access, but a 200 does not guarantee dispatch permission. If workflow dispatch is required, treat it as a best-effort probe: a 403 at probe time means definitely no access; a 200 means probably accessible but not guaranteed. Document the residual risk explicitly.
+**workflow_dispatch note:** `GET /repos/{o}/{r}/actions/workflows` requires only `actions:read` scope — a 200 confirms Actions access but does **not** verify dispatch permission (`actions:write`). A 403 may indicate missing scope, but is also returned transiently by rate limiting, SSO enforcement, or org policy. Classify a 403 as “likely no access” (not “definitely no access”) and use `tool-error-triage` to distinguish permanent from transient. If workflow dispatch cannot be definitively verified pre-flight, document it as an unverifiable dependency and accept the residual risk.
 
 **Critical:** verify in the **actual execution context** where the capability will be used. A token that succeeds in an MCP tool call may not be present in a subprocess. Check both scopes independently if both will be used.
 
@@ -148,7 +155,7 @@ For each failed probe, classify the gap and apply the appropriate response:
 | Token absent from subprocess; present at PID1 | Environment setup gap | Surface gap; see `subprocess-env-scope-verification` for recovery options — do not recover inline in the gate |
 | Token absent entirely (not in PID1, not in env) | Blocker — cannot proceed | Surface gap, stop before any irreversible step |
 | Wrong token scope (e.g., GH_TOKEN vs GITHUB_API_TOKEN) | Blocker for cross-repo ops | Use correct token, or scope task to operations the token supports |
-| Missing system dependency (node, npm, binary) | Blocker if no fallback | Install if possible; surface gap if install is gated |
+| Missing system dependency (node, npm, binary) | Blocker if binary is absent | Surface gap and stop — installing during intake is a mutating step; installation is a pre-task setup concern, not inline gate remediation |
 | Insufficient file permission | Blocker | Surface gap; do NOT attempt `chmod` or other remediation during intake (that is a mutating step, not a probe) |
 | API scope missing (e.g., no `workflow` scope) | Partial blocker | Proceed on steps that don't require missing scope; explicitly skip or defer scoped steps |
 

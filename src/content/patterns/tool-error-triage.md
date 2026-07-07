@@ -3,7 +3,7 @@ title: "Tool Error Triage"
 category: "agent-autonomy"
 evidenceLevel: "moderate"
 summary: "Classify every tool error on two axes — transient vs permanent, own-domain vs external — then apply the appropriate recovery strategy. Without classification, agents either retry infinitely on permanent errors or abort immediately on recoverable ones. Both are wrong."
-relatedPatterns: ["circuit-breaker", "dead-sprint-recovery", "empirical-validation-loop", "graceful-capability-degradation"]
+relatedPatterns: ["circuit-breaker", "dead-sprint-recovery", "empirical-validation-loop", "graceful-capability-degradation", "capability-preflight-gate"]
 tags: ["error-handling", "retry", "backoff", "classification", "recovery", "resilience", "transient", "permanent"]
 ---
 

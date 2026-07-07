@@ -3,7 +3,7 @@ title: "Graceful Capability Degradation"
 category: "agent-autonomy"
 evidenceLevel: "strong"
 summary: "When a primary tool, service, or model is unavailable, identify a lower-capability alternative and continue operating in reduced mode — rather than failing completely. Preserve partial task value, communicate transparently about reduced capability, and restore full capability when the primary recovers."
-relatedPatterns: ["circuit-breaker", "tool-error-triage", "rate-limit-back-off", "subprocess-env-scope-verification", "uncertainty-gated-irreversible-action"]
+relatedPatterns: ["circuit-breaker", "tool-error-triage", "rate-limit-back-off", "subprocess-env-scope-verification", "uncertainty-gated-irreversible-action", "capability-preflight-gate"]
 tags: ["autonomy", "resilience", "fallback", "degradation", "availability", "error-recovery", "capability-tiers"]
 ---
 
