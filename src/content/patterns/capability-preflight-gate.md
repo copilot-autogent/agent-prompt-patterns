@@ -96,26 +96,39 @@ GitHub API access (MCP)      → github-get_me (returns login or errors)
 GitHub API in subprocess     → curl -s -o /dev/null -w "%{http_code}" \
                                  -H "Authorization: Bearer $TOKEN" \
                                  https://api.github.com/user
-Specific repo write scope    → list branches (read-only; confirms repo access)
+Specific repo write scope    → GET /repos/{o}/{r} and check .permissions.push
+                                 (non-destructive; returns push:true/false)
 workflow_dispatch scope      → GET /repos/{o}/{r}/actions/workflows \
-                                 (403 = token lacks workflow scope)
+                                 (403 = no Actions access; 200 = can list, but
+                                  dispatch permission is not directly verifiable
+                                  pre-flight — document as "best-effort" and
+                                  treat a later 403 on dispatch as expected risk)
 node/npm version             → node --version && npm --version
-Write permission to path     → touch /tmp/probe && rm /tmp/probe
+Write permission to path     → touch /tmp/probe-$$ && rm /tmp/probe-$$
 System binary present        → which <binary>
 ```
+
+**Probing write scope non-destructively:** The repository metadata endpoint returns a `permissions` object that reflects the effective push/admin access for the authenticated token — no write required:
+
+```bash
+# Check repo write access without creating any refs
+PERM=$(curl -s -H "Authorization: Bearer $TOKEN" \
+       https://api.github.com/repos/{owner}/{repo} \
+       | grep -o '"push":[^,}]*' | head -1)
+[ "$PERM" = '"push":true' ] || \
+  { echo "GATE FAIL: token lacks push permission on {owner}/{repo}"; exit 1; }
+```
+
+**workflow_dispatch note:** There is no reliable non-destructive API probe for whether a token can dispatch a workflow. `GET /repos/{o}/{r}/actions/workflows` confirms Actions access, but a 200 does not guarantee dispatch permission. If workflow dispatch is required, treat it as a best-effort probe: a 403 at probe time means definitely no access; a 200 means probably accessible but not guaranteed. Document the residual risk explicitly.
 
 **Critical:** verify in the **actual execution context** where the capability will be used. A token that succeeds in an MCP tool call may not be present in a subprocess. Check both scopes independently if both will be used.
 
 ```bash
-# Verify token in subprocess context (not just MCP layer)
+# Verify token is available and valid in subprocess context (not just MCP layer)
 TOKEN="${GITHUB_API_TOKEN:-}"
 if [ -z "$TOKEN" ]; then
-  # Try to recover from PID1 if not propagated
-  TOKEN=$(cat /proc/1/environ 2>/dev/null | tr '\0' '\n' \
-          | grep '^GITHUB_API_TOKEN=' | cut -d= -f2-)
-fi
-if [ -z "$TOKEN" ]; then
-  echo "GATE FAIL: GITHUB_API_TOKEN not available in subprocess context"
+  echo "GATE FAIL: GITHUB_API_TOKEN not available in subprocess env"
+  echo "Recovery: ensure the token is injected into the subprocess execution environment"
   exit 1
 fi
 HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
@@ -124,17 +137,19 @@ HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
 [ "$HTTP" = "200" ] || { echo "GATE FAIL: token invalid (HTTP $HTTP)"; exit 1; }
 ```
 
+Note: if the token is absent from subprocess env, see `subprocess-env-scope-verification` for recovery options (e.g., extracting from the parent process env). Do not embed token-recovery logic in the pre-flight gate itself — keep the gate a pure read/probe; recovery is an environment setup concern separate from intake verification.
+
 ### Step 3: Classify gaps and decide
 
 For each failed probe, classify the gap and apply the appropriate response:
 
 | Gap type | Classification | Response |
 |---|---|---|
-| Token absent from subprocess; present at PID1 | Resolvable — extract and export | Extract from PID1, re-probe before proceeding |
+| Token absent from subprocess; present at PID1 | Environment setup gap | Surface gap; see `subprocess-env-scope-verification` for recovery options — do not recover inline in the gate |
 | Token absent entirely (not in PID1, not in env) | Blocker — cannot proceed | Surface gap, stop before any irreversible step |
 | Wrong token scope (e.g., GH_TOKEN vs GITHUB_API_TOKEN) | Blocker for cross-repo ops | Use correct token, or scope task to operations the token supports |
 | Missing system dependency (node, npm, binary) | Blocker if no fallback | Install if possible; surface gap if install is gated |
-| Insufficient file permission | Resolvable or blocker | Try `chmod`; if owned by another process, surface gap |
+| Insufficient file permission | Blocker | Surface gap; do NOT attempt `chmod` or other remediation during intake (that is a mutating step, not a probe) |
 | API scope missing (e.g., no `workflow` scope) | Partial blocker | Proceed on steps that don't require missing scope; explicitly skip or defer scoped steps |
 
 **Fail fast on unresolvable blockers:**
