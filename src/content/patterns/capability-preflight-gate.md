@@ -98,13 +98,14 @@ GitHub API in subprocess     → curl -s -o /dev/null -w "%{http_code}" \
                                  https://api.github.com/user
 Specific repo write scope    → GET /repos/{o}/{r} and check .permissions.push
                                  (non-destructive; returns push:true/false)
-workflow_dispatch scope      → GET /repos/{o}/{r}/actions/workflows \
-                                 (403 = no Actions access; 200 = can list, but
-                                  dispatch permission is not directly verifiable
-                                  pre-flight — document as "best-effort" and
-                                  treat a later 403 on dispatch as expected risk)
+workflow_dispatch scope      → GET /repos/{o}/{r}/actions/workflows
+                                 (non-200 = likely access issue, but 403 can
+                                  also be transient; 200 confirms actions:read
+                                  only — dispatch requires actions:write which
+                                  cannot be probed non-destructively pre-flight;
+                                  document as best-effort, accept residual risk)
 node/npm version             → node --version && npm --version
-Write permission to path     → touch "$(mktemp -p /tmp)" && rm -f "$PROBE_FILE"
+Write permission to path     → PROBE=$(mktemp -p /tmp) && rm -f "$PROBE"  # mktemp creates the file; probe = can create
 System binary present        → which <binary>
 ```
 
@@ -116,14 +117,19 @@ REPO_RESP=$(curl -s -w "\n%{http_code}" \
             -H "Authorization: Bearer $TOKEN" \
             https://api.github.com/repos/{owner}/{repo})
 HTTP=$(echo "$REPO_RESP" | tail -1)
-BODY=$(echo "$REPO_RESP" | head -n -1)
+BODY=$(echo "$REPO_RESP" | sed '$d')
 if [ "$HTTP" != "200" ]; then
   echo "GATE FAIL: repo API returned HTTP $HTTP (auth failure, not-found, or rate limit)"
   exit 1
 fi
-PUSH=$(echo "$BODY" | grep -o '"push":[^,}]*' | head -1)
-[ "$PUSH" = '"push":true' ] || \
-  { echo "GATE FAIL: token lacks push permission on {owner}/{repo}"; exit 1; }
+# Use jq if available (reliable); fall back to grep (fragile: field order/spacing matters)
+if command -v jq >/dev/null 2>&1; then
+  PUSH=$(echo "$BODY" | jq -r '.permissions.push // false')
+else
+  PUSH=$(echo "$BODY" | grep -o '"push":[[:space:]]*[^,}]*' | grep -o 'true\|false' | head -1)
+fi
+[ "$PUSH" = 'true' ] || \
+  { echo "GATE FAIL: token lacks push permission on {owner}/{repo} (or response not parseable)"; exit 1; }
 ```
 
 **workflow_dispatch note:** `GET /repos/{o}/{r}/actions/workflows` requires only `actions:read` scope — a 200 confirms Actions access but does **not** verify dispatch permission (`actions:write`). A 403 may indicate missing scope, but is also returned transiently by rate limiting, SSO enforcement, or org policy. Classify a 403 as “likely no access” (not “definitely no access”) and use `tool-error-triage` to distinguish permanent from transient. If workflow dispatch cannot be definitively verified pre-flight, document it as an unverifiable dependency and accept the residual risk.
