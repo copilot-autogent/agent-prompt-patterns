@@ -3,7 +3,7 @@ title: "Bounded Autonomy"
 category: "agent-autonomy"
 evidenceLevel: "strong"
 summary: "Give autonomous agents an explicit decision taxonomy: a list of what they can decide unilaterally vs. what requires human escalation. Without explicit boundaries, agents oscillate between over-asking (friction) and under-asking (safety risk), often on the same run."
-relatedPatterns: ["proactivity-injection", "dispatcher-pattern", "observer-actor-separation"]
+relatedPatterns: ["proactivity-injection", "dispatcher-pattern", "observer-actor-separation", "capability-preflight-gate"]
 tags: ["autonomy", "decision-making", "escalation", "gates", "self-decidable", "safety", "recurring-tasks"]
 ---
 

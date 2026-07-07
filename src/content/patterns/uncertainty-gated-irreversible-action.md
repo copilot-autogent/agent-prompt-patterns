@@ -3,7 +3,7 @@ title: "Uncertainty-Gated Irreversible Action"
 category: "agent-autonomy"
 evidenceLevel: "strong"
 summary: "Before executing any irreversible action (merge, delete, deploy, external POST), explicitly enumerate the 2–3 facts the action depends on, verify the highest-stakes assumption with a fresh tool call, and state a confidence level. Act at HIGH or MODERATE confidence. At LOW confidence, escalate or wrap the action in a reversible alternative."
-relatedPatterns: ["bounded-autonomy", "side-effect-verification", "sprint-completion-verification", "dead-sprint-recovery", "evidence-freshness-decay", "graceful-capability-degradation"]
+relatedPatterns: ["bounded-autonomy", "side-effect-verification", "sprint-completion-verification", "dead-sprint-recovery", "evidence-freshness-decay", "graceful-capability-degradation", "capability-preflight-gate"]
 tags: ["safety", "autonomy", "irreversibility", "verification", "merge", "deploy", "gate", "confidence", "assumption-checking"]
 ---
 
