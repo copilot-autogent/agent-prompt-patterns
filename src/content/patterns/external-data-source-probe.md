@@ -63,19 +63,25 @@ YES: "requires field `公告現值` (announced land value) in column 14 of `a_lv
 Run a minimal check to confirm the data is accessible and contains the expected field:
 
 ```bash
-# Probe an API endpoint
-curl -s "https://api.example.gov/v1/data?limit=1" | jq '.results[0] | keys'
+# Probe an API endpoint — use -f so curl exits non-zero on 4xx/5xx
+curl -sf "https://api.example.gov/v1/data?limit=1" | jq '.results[0] | keys' \
+  || echo "PROBE FAILED: check endpoint availability and auth"
 
-# Download a sample file and inspect its header
-curl -s "https://plvr.land.moi.gov.tw/DownloadOpenData?type=zip&fileName=lvr_landcsv.zip" \
-  -o /tmp/plvr_sample.zip && \
-  unzip -p /tmp/plvr_sample.zip a_lvr_land_a.csv | head -1 | tr ',' '\n' | nl
+# Download a sample file and inspect its header — use a unique tmp path
+PROBE_TMP=$(mktemp /tmp/plvr_probe_XXXXXX.zip)
+curl -sf "https://plvr.land.moi.gov.tw/DownloadOpenData?type=zip&fileName=lvr_landcsv.zip" \
+  -o "$PROBE_TMP" && \
+  unzip -p "$PROBE_TMP" a_lvr_land_a.csv | head -1 | tr ',' '\n' | nl
+rm -f "$PROBE_TMP"
 
 # Check a CSV column exists by name
-curl -s "$DATA_URL" | head -1 | grep -i "公告現值"
+curl -sf "$DATA_URL" | head -1 | grep -i "公告現值" \
+  || echo "PROBE FAILED: field not found or endpoint unreachable"
 
-# Count columns to detect schema drift
-curl -s "$DATA_URL" | head -2 | awk -F',' '{print NF}'
+# Count columns to detect schema drift — use Python csv reader for quoted-comma safety
+curl -sf "$DATA_URL" | head -2 | node -e \
+  "const lines=require('fs').readFileSync('/dev/stdin','utf8').trim().split('\n');
+   lines.forEach((l,i)=>console.log('row '+(i+1)+': '+l.split(',').length+' columns'));"
 ```
 
 The probe does not need to be comprehensive — it needs to answer three questions:
@@ -100,8 +106,9 @@ Add a verification note to the issue before dispatching the sprint:
 
 | Probe outcome | Issue status |
 |---|---|
-| All required fields verified, endpoint accessible | `status:draft` (ready to sprint) |
-| Field exists but schema/encoding unclear | `status:needs-design` (design before sprint) |
+| All required fields verified, accessible, non-null in representative rows | `status:draft` (ready to sprint) |
+| Field exists but encoding unclear (full-width digits, ROC dates) | `status:needs-design` (normalize strategy before sprint) |
+| Field present but contains unexpected nulls or only in recent rows | `status:needs-design` (null-handling strategy before sprint) |
 | Field not found, source uncertain | `status:needs-input` (human decision required) |
 | Endpoint requires auth not yet provisioned | `status:blocked` (unblock first) |
 
