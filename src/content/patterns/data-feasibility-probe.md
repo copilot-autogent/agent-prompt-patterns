@@ -73,7 +73,12 @@ A probe answers three questions:
 2. Does the response contain the expected field or column?
 3. Is the schema structurally consistent with what the feature requires?
 
-The probe does not need to be comprehensive — a single `curl` and a `grep` is often sufficient. See `external-data-source-probe` for specific probe scripts for JSON APIs, CSV bulk-downloads, and scraped content.
+The probe does not need to be comprehensive — a single `curl` and a field check is often sufficient. See `external-data-source-probe` for specific probe scripts for JSON APIs, CSV bulk-downloads, and scraped content.
+
+**Probe reliability notes:**
+- **Check HTTP status first**: a `curl`/`grep` on a string can false-positive against login pages, HTML error bodies, or error envelopes that mention the field name. Confirm the response is HTTP 2xx with the expected Content-Type before treating a string match as proof of presence.
+- **Dataset joins require join-key compatibility**: verifying that both sources contain the expected fields is necessary but not sufficient. Check that the join key has compatible normalization (same encoding, same ID format, same cardinality range) in both datasets. Two sources can each contain a field while being unusable for a join due to key mismatch.
+- **Prefer header-name verification over column position**: record the field's column name as it appears in the header row, not its absolute position. Column positions shift when format updates add or remove fields; the name is the stable identifier.
 
 > **Probe confidence floor**: check at least one representative data row, not just the header. A field present in the header but null in 95% of rows is effectively absent for most features.
 
@@ -84,13 +89,15 @@ Add a `## Data Feasibility` section to every issue with an external data depende
 ```markdown
 ## Data Feasibility
 
-✅ `公告現值` — verified present in `a_lvr_land_a.csv` col 14
-   (checked 2026-07-09; 28-col format; non-null in sampled 50 rows)
+✅ `公告現值` — verified present in `a_lvr_land_a.csv` by header name (column 14 in current format)
+   (checked 2026-07-09; non-null in sampled 50 rows; HTTP 200 application/zip)
 
 ❌ `completion_wave` — not found in PLVR bulk download or cadastral data
    Possible alternative: construction completion registry (需查詢建管系統)
    → Blocking sprint dispatch pending source identification
 ```
+
+**Credential hygiene**: probe results recorded in issue bodies must not include API tokens, signed URLs, session cookies, or any credential material. Record only the probe outcome (field present/absent, endpoint status code, column name) — not the command with embedded auth headers or the raw response body if it contains private data.
 
 This note serves two functions:
 - It communicates the verification status to the sprint agent so it doesn't re-probe from scratch
@@ -103,6 +110,8 @@ This note serves two functions:
 | All required fields verified, accessible, non-null in representative rows | `status:draft` — ready to sprint |
 | Field exists but encoding or format requires clarification | `status:needs-design` — resolve strategy before sprinting |
 | Field present but significant null rate in historical data | `status:needs-design` — define null-handling strategy |
+| Join-key compatibility unverified (encoding/cardinality mismatch possible) | `status:needs-design` — verify join feasibility before sprinting |
+| Rate limit, licensing, robots.txt, or TOS constraint unresolved | `status:needs-design` — verify operational constraints before sprinting |
 | Field not found; alternate source unknown | `status:needs-input` — human decision required on source |
 | Endpoint requires auth not yet provisioned | `status:blocked` — unblock auth first |
 
@@ -136,7 +145,7 @@ Issue draft assembled
 
 **realestate-radar #72 (pattern missing)**: A data-join feature was filed as `status:draft` without verifying that `公告現值` existed in the expected CSV column. The sprint was dispatched, ran, and could not find the field. The issue was retroactively labeled `needs-design`. The sprint time was wasted; the probe would have taken under two minutes.
 
-**realestate-radar #106 (format shift detection)**: A government CSV added two extra fields mid-row without notice, breaking a 28-column parser. A probe that checked column count against the expected number would have caught the format shift the moment the file was regenerated. Instead, the mismatch was discovered through broken downstream output after sprint completion.
+**realestate-radar #106 (format shift detection)**: A government CSV added two extra fields mid-row without notice, breaking a 28-column parser. A probe that checked column count against the expected number AND matched fields by header name (not position) would have caught the format shift the moment the file was regenerated. Instead, the mismatch was discovered through broken downstream output after sprint completion.
 
 **Pattern cross-reference**: The same probe discipline appears in `external-data-source-probe` (technical probe execution), `hypothesis-before-action` (gating actions on untested hypotheses), and `capability-preflight-gate` (verifying required resources before sprint start). This pattern operationalizes the discipline specifically at the issue-filing step, where the cost of catching the problem is lowest.
 
