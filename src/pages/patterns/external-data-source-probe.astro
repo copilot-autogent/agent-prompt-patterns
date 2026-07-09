@@ -1,0 +1,27 @@
+---
+// Redirect stub: external-data-source-probe was consolidated into data-feasibility-probe (#135)
+const base = import.meta.env.BASE_URL;
+const canonicalPath = `${base}patterns/data-feasibility-probe`;
+const siteOrigin = Astro.site?.href?.replace(/\/$/, '') ?? 'https://copilot-autogent.github.io';
+const canonicalUrl = `${siteOrigin}${canonicalPath}`;
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Redirecting…</title>
+    <meta http-equiv="refresh" content={`0;url=${canonicalPath}`} />
+    <meta name="robots" content="noindex" />
+    <link rel="canonical" href={canonicalUrl} />
+  </head>
+  <body>
+    <p>
+      This pattern has been consolidated into
+      <a href={canonicalPath}>Data Feasibility Probe</a>.
+      Redirecting…
+    </p>
+    <script define:vars={{ canonicalPath }}>
+      window.location.replace(canonicalPath);
+    </script>
+  </body>
+</html>
