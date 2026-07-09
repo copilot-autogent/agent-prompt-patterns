@@ -2,7 +2,7 @@
 title: "Operator-Blocked Escalation Ladder"
 category: "agent-autonomy"
 evidenceLevel: "strong"
-summary: "When a needs-input issue stalls on human response, apply a tiered escalation ladder with pre-declared defaults and deadlines. Day 0: file with defaults + auto-decide date. Day 3: warning comment. Day 7: act on defaults or close not_planned. Never age past 14 days silently."
+summary: "When a needs-input issue stalls on human response, apply a tiered escalation ladder with pre-declared defaults and deadlines. File with an explicit auto-decide date. Post a warning one day before. Act on defaults or close not_planned on the date. Never age past 14 days silently."
 relatedPatterns: ["decision-ownership", "bounded-autonomy", "uncertainty-gated-irreversible-action"]
 tags: ["escalation", "needs-input", "autonomy", "stall-prevention", "defaults", "deadlines", "single-operator", "pipeline"]
 ---
@@ -43,32 +43,33 @@ The core tension: the agent cannot act without a decision, and the human cannot 
 
 1. **The question** — one specific decision, not a collection of related questions
 2. **Pre-declared defaults** — what the agent will do if no response is received
-3. **Auto-decide date** — explicit calendar date when the default kicks in (default: 3 days for low-stakes, 7 days for high-stakes)
+3. **Auto-decide date** — explicit calendar date when the agent will act (ISO 8601, UTC; default: Day 3 from filing for low-stakes, Day 7 for high-stakes)
 
-**The escalation ladder:**
+**The escalation ladder** uses two fixed thresholds:
 
-| Day | Action |
-|-----|--------|
-| Day 0 | File issue with `status:needs-input` + pre-declared defaults + auto-decide date in the body |
-| Day 3 (or auto-decide date) | Post warning comment: "Auto-decide threshold reached. If no response by [auto-decide date]: **[low/medium-stakes]** will proceed with defaults — [explicit defaults]; **[high-stakes]** will close as not_planned. Respond or reopen to override." |
-| Day 7 (or auto-decide date) | **Low/medium-stakes with safe defaults**: remove `status:needs-input`, apply `status:draft`, post "Proceeding with defaults: [list] — override window passed". **High-stakes (architecture/kill-pivot)**: close `not_planned` with "Reopen when ready to decide." First check current issue state; do not act if already resolved. |
-| Never | Let `needs-input` age > 14 days without an escalation comment or closure |
+| Threshold | Day (default) | Action |
+|-----------|---------------|--------|
+| **Warning** | Day 0 + (auto-decide − 1 day) | Post comment: "Auto-decide threshold is [date]. If no response by then: **[low/medium-stakes]** will proceed with defaults — [explicit defaults]; **[high-stakes]** will close as not_planned. Respond or comment to override." |
+| **Action** | Auto-decide date | Verify issue is still open + unresolved. **Low/medium-stakes**: remove `status:needs-input`, apply `status:draft`, post "Proceeding with defaults: [list]". **High-stakes**: close `not_planned`, post "Reopen when ready to decide." |
+| **Hard cap** | Day 14 | If neither threshold has fired: post escalation comment and close `not_planned` with explanation. |
+
+For a **low-stakes** issue filed on Monday with a 3-day auto-decide: warning fires Sunday evening, action fires Monday. For a **high-stakes** issue with 7-day auto-decide: warning fires Day 6, action fires Day 7. The warning always precedes the action by one day.
 
 **Pre-declared defaults are non-negotiable**: "Proceeding unless you object" with no stated plan is ambiguity, not a default. A real default: "If no objection, will implement with difficulty tier fixed at current user median, not adaptive." The operator must be able to ratify or override in one sentence; that's only possible if they know exactly what they're ratifying.
 
-**Status label transitions are exclusive**: when transitioning an issue out of `needs-input`, always remove the old label before applying the new one. An issue carrying both `status:needs-input` and `status:draft` will match `needs-input` sweepers and `draft` dispatchers simultaneously — causing double processing. Remove `status:needs-input` first, then apply the new status.
+**Status label transitions**: GitHub's label API is non-atomic — removing and re-applying labels are two separate calls. Use the GitHub Issues "remove then add" approach and verify the final label set after both calls, not just after the first. After a label transition, re-fetch the issue and confirm only the new status label is present before signaling done.
 
 **Soft holds require enforcement**: Writing a recommendation to hold something in memory or a comment doesn't stop crons. To actually gate work: (a) apply a `status:blocked` or `hold` label — but only if your scheduler crons are explicitly configured to filter it out (verify before relying on this); (b) close the issue with a note to reopen after the decision; or (c) pause the specific cron task. Option (b) is the most universally reliable since it changes issue state, not just labels. Advisory-only holds evaporate at session end.
 
 **Stake classification:**
 
-| Stakes | Characteristics | Default behavior at Day 7 |
+| Stakes | Characteristics | Action at auto-decide date |
 |--------|----------------|--------------------------|
 | Low | Reversible, no user-facing behavior change, safe defaults obvious | Proceed with defaults |
 | Medium | Some user-facing impact, but contained and fixable | Proceed with defaults + prominent notification |
 | High | Architecture, product direction, kill/pivot, irreversible | Close `not_planned` — force explicit reopen |
 
-**Scheduling the escalation**: File a `once` task or cron check timed to the auto-decide date. A date in the issue body is not mechanically enforced — something must query it and act. Options: (a) a `once` task scheduled at filing time (preferred — fires exactly once, no idempotency risk); (b) a daily `needs-input` sweeper that reads the explicit `auto-decide:` field from the issue body rather than `updated_at` age (avoid `updated_at`: adding an escalation comment resets it and can suppress the next check). Whichever mechanism you use, guard against duplicate actions with a state check before acting: "has an escalation comment already been posted?" before posting another.
+**Scheduling the escalation**: File two `once` tasks at filing time: one for the warning (auto-decide − 1 day), one for the action (auto-decide date). Preferred over a sweeper — fires exactly once, no idempotency complexity. If using a daily sweeper instead, parse the explicit `auto-decide:` field from the issue body (ISO 8601 format); do not use `updated_at` age (posting a comment resets that timestamp). Whichever mechanism you choose, guard against duplicate actions: before posting a comment or changing labels, check whether the warning comment already exists and whether the issue is still in `needs-input` state.
 
 ## Evidence
 
