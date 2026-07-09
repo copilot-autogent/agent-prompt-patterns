@@ -3,7 +3,7 @@ title: "Capability Pre-Flight Gate"
 category: "agent-autonomy"
 evidenceLevel: "strong"
 summary: "Before committing to a multi-step task, enumerate all required capabilities (tool access, auth tokens, API scopes, file permissions, system dependencies) and verify each is available and properly scoped. Surface gaps at task intake — before any irreversible step — rather than discovering them mid-flight after partial work has created a difficult-to-recover state."
-relatedPatterns: ["subprocess-env-scope-verification", "graceful-capability-degradation", "tool-error-triage", "uncertainty-gated-irreversible-action", "bounded-autonomy"]
+relatedPatterns: ["subprocess-env-scope-verification", "graceful-capability-degradation", "tool-error-triage", "uncertainty-gated-irreversible-action", "bounded-autonomy", "data-feasibility-probe"]
 tags: ["autonomy", "auth", "tokens", "permissions", "preflight", "intake", "verification", "sprint", "capabilities", "scoping", "fail-fast"]
 ---
 

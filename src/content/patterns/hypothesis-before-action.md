@@ -3,7 +3,7 @@ title: "Hypothesis-Before-Action"
 category: "agent-autonomy"
 evidenceLevel: "moderate"
 summary: "Agents encountering unexpected behaviour often take multiple simultaneous fix actions without first forming an explicit model of why the failure occurs. This produces false fixes, confounded root causes, and abandoned hypotheses. Before any *intervention*, state an explicit, falsifiable hypothesis, execute only the minimum action to test it, and update the hypothesis before acting again. Observation (gathering evidence) is not an intervention and always precedes the hypothesis."
-relatedPatterns: ["empirical-validation-loop", "constraint-falsification", "tool-error-triage", "evidence-freshness-decay", "max-retry-pivot"]
+relatedPatterns: ["empirical-validation-loop", "constraint-falsification", "tool-error-triage", "evidence-freshness-decay", "max-retry-pivot", "data-feasibility-probe"]
 tags: ["debugging", "hypothesis", "falsification", "root-cause", "diagnosis", "scientific-method", "one-variable-at-a-time", "tier:2-standard"]
 ---
 
