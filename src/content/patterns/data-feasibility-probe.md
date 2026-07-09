@@ -79,13 +79,18 @@ The probe does not need to be comprehensive — a single `curl` and a field chec
 
 ```bash
 # --- Probe a JSON API endpoint ---
+# Use set -o pipefail so curl failures aren't masked by jq.
 # -sf: -s silences progress, -f exits non-zero on 4xx/5xx
-curl -sf "https://api.example.gov/v1/data?limit=1" \
-  | jq 'if type=="array" then .[0] else .results[0] end | keys' \
+#!/usr/bin/env bash
+set -o pipefail
+RESPONSE=$(curl -sf "https://api.example.gov/v1/data?limit=1") \
   || { echo "PROBE FAILED: endpoint unreachable or returned error status"; exit 1; }
+# jq exits 0 even for null — check for the specific field explicitly with has():
+echo "$RESPONSE" | jq -e '(if type=="array" then .[0] else .results[0] end) | has("expected_field_name")' \
+  && echo "✅ Field present" || echo "❌ Field missing or null"
 
 # --- Download a CSV zip and verify a column name is present ---
-#!/usr/bin/env bash
+#!/usr/bin/env bash   # required for pipefail; mktemp --suffix is GNU coreutils (BSD: mktemp /tmp/plvr.XXXXXX.zip)
 set -o pipefail
 PROBE_TMP=$(mktemp --suffix=.zip)
 trap 'rm -f "$PROBE_TMP"' EXIT
@@ -94,9 +99,12 @@ curl -sf "https://plvr.land.moi.gov.tw/DownloadOpenData?type=zip&fileName=lvr_la
   -o "$PROBE_TMP"
 # Decode Big5/CP950 before text operations
 HEADER=$(unzip -p "$PROBE_TMP" a_lvr_land_a.csv | head -1 | iconv -f cp950 -t utf-8)
-echo "$HEADER" | tr ',' '\n' | tr -d '\r' | grep -Fx "公告現值" \
-  && echo "✅ Field found" \
-  || echo "❌ Field not found — check column name and encoding"
+# Use if/then/else — avoids the A && B || C pitfall (C executes if B fails, not only if A fails)
+if echo "$HEADER" | tr ',' '\n' | tr -d '\r' | grep -qFx "公告現值"; then
+  echo "✅ Field found"
+else
+  echo "❌ Field not found — check column name and encoding"
+fi
 echo "Column count: $(echo "$HEADER" | tr ',' '\n' | wc -l)"
 # Sample a data row to check for column-count drift:
 SAMPLE=$(unzip -p "$PROBE_TMP" a_lvr_land_a.csv | sed -n '2p' | iconv -f cp950 -t utf-8)
