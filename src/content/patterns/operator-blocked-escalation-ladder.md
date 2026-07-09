@@ -50,11 +50,13 @@ The core tension: the agent cannot act without a decision, and the human cannot 
 | Day | Action |
 |-----|--------|
 | Day 0 | File issue with `status:needs-input` + pre-declared defaults + auto-decide date in the body |
-| Day 3 (or auto-decide date) | Post comment: "Auto-decide threshold reached. No objection by EOD → sprint proceeds with: [explicit defaults]. Reopen or comment to override." |
-| Day 7 | For low-stakes with safe defaults: flip to `status:draft`, note "Proceeding with defaults: [list]". For architecture/kill-pivot: close `not_planned` with "Reopen when ready to decide." |
+| Day 3 (or auto-decide date) | Post comment: "Auto-decide threshold reached. No objection by EOD → **[low/medium-stakes]** sprint proceeds with: [explicit defaults]; **[high-stakes]** will close as not_planned. Reopen or comment to override." |
+| Day 7 | **Low/medium-stakes with safe defaults**: remove `status:needs-input`, apply `status:draft`, post "Proceeding with defaults: [list]". **High-stakes (architecture/kill-pivot)**: close `not_planned` with "Reopen when ready to decide." |
 | Never | Let `needs-input` age > 14 days without an escalation comment or closure |
 
 **Pre-declared defaults are non-negotiable**: "Proceeding unless you object" with no stated plan is ambiguity, not a default. A real default: "If no objection, will implement with difficulty tier fixed at current user median, not adaptive." The operator must be able to ratify or override in one sentence; that's only possible if they know exactly what they're ratifying.
+
+**Status label transitions are exclusive**: when transitioning an issue out of `needs-input`, always remove the old label before applying the new one. An issue carrying both `status:needs-input` and `status:draft` will match `needs-input` sweepers and `draft` dispatchers simultaneously — causing double processing. Remove `status:needs-input` first, then apply the new status.
 
 **Soft holds require enforcement**: Writing a recommendation to hold something in memory or a comment doesn't stop crons. To actually gate work: (a) apply a `status:blocked` or `hold` label that scheduler crons filter out, (b) close the issue with a note to reopen after the decision, or (c) pause the specific cron task. Advisory-only holds evaporate at session end.
 
@@ -66,7 +68,7 @@ The core tension: the agent cannot act without a decision, and the human cannot 
 | Medium | Some user-facing impact, but contained and fixable | Proceed with defaults + prominent notification |
 | High | Architecture, product direction, kill/pivot, irreversible | Close `not_planned` — force explicit reopen |
 
-**Scheduling the escalation**: File a `once` task or cron check timed to the auto-decide date. A date in the issue body is not mechanically enforced — something must query it and act. Options: a daily `needs-input` sweeper that checks `updated_at` age against the auto-decide date field; or a `once` task scheduled at filing time.
+**Scheduling the escalation**: File a `once` task or cron check timed to the auto-decide date. A date in the issue body is not mechanically enforced — something must query it and act. Options: (a) a `once` task scheduled at filing time (preferred — fires exactly once, no idempotency risk); (b) a daily `needs-input` sweeper that reads the explicit `auto-decide:` field from the issue body rather than `updated_at` age (avoid `updated_at`: adding an escalation comment resets it and can suppress the next check). Whichever mechanism you use, guard against duplicate actions with a state check before acting: "has an escalation comment already been posted?" before posting another.
 
 ## Evidence
 
