@@ -3,7 +3,7 @@ title: "Max-Retry Pivot"
 category: "agent-autonomy"
 evidenceLevel: "strong"
 summary: "A single agent retrying the same failed approach wastes budget without making progress. After N failed attempts with the same approach class (default: 2), the agent must stop, explicitly articulate what is different about the next strategy, and either pivot or escalate — never silently attempt N+1 with identical logic."
-relatedPatterns: ["convergence-stall-detection", "constraint-falsification", "hypothesis-before-action", "operator-blocked-escalation-ladder"]
+relatedPatterns: ["convergence-stall-detection", "constraint-falsification", "hypothesis-before-action", "operator-blocked-escalation-ladder", "rate-limit-back-off"]
 tags: ["autonomy", "error-recovery", "retry", "pivot", "escalation", "strategy-switching", "loop-prevention", "debugging"]
 ---
 
@@ -49,28 +49,29 @@ It does **not** apply to:
 | **Tool** | Secondary | Same API call, same shell command | Different tool, different data source |
 | **Data / Input** | Secondary | Same underlying source, same assumptions about the input | Different normalization, different source |
 
-**Using the secondary axes**: a different API call that still assumes the same wrong root cause is the same class. A superficially identical tool invocation with a genuinely different hypothesis about the failure is a different class. When in doubt, ask: "Has my model of *why* this is failing changed?" If no, it's the same class.
+**The constraint model axis is the deciding one.** A different API call that still assumes the same wrong root cause is the same class. A superficially identical tool invocation with a genuinely different hypothesis about the failure is a different class. When in doubt, ask: "Has my model of *why* this is failing changed?" If no, it's the same class.
 
 ### Step 2: Track the attempt counter (per sub-problem)
 
-The counter tracks same-class attempts. An agent may pivot at any point when a failure clearly falsifies the current hypothesis — the threshold enforces a **maximum** on same-class retries; it does not require exhausting all N attempts before pivoting.
+Instantiate a **separate counter for each sub-problem**; do not share `attempt_count` across distinct sub-problems in the same task. The counter tracks same-class attempts within one sub-problem. An agent may pivot at any point when a failure clearly falsifies the current hypothesis — the threshold is a **maximum** on same-class retries, not a mandatory minimum before pivoting.
 
 ```
-attempt_count = 0       # resets when a genuinely different strategy is adopted
-MAX_ATTEMPTS = 2        # default threshold per sub-problem
+# Single sub-problem scope — reset when switching to the next sub-problem.
+attempt_count = 0
+MAX_ATTEMPTS = 2        # default; set per sub-problem before starting
 
-while task_not_complete:
+while sub_problem_not_resolved:
     result = execute(current_strategy)
 
     if result.succeeded:
         attempt_count = 0
-        # continue with next step
+        break  # sub-problem resolved; advance to the next sub-problem
 
     else:
         attempt_count += 1
 
-        # Evaluate after each failure — pivot as soon as the hypothesis is falsified,
-        # do not wait for the counter to reach MAX_ATTEMPTS if a pivot is obvious.
+        # Evaluate after each failure — pivot as soon as the hypothesis is falsified.
+        # Do not wait for the counter to reach MAX_ATTEMPTS if a pivot is obvious.
         new_strategy = identify_pivot_if_hypothesis_falsified(current_strategy, result)
 
         if new_strategy is not None:
@@ -84,7 +85,7 @@ while task_not_complete:
             escalate(current_strategy, result, attempt_count)
             break
 
-        # implicit: attempt_count < MAX_ATTEMPTS and no pivot yet → retry is still in budget
+        # implicit: attempt_count < MAX_ATTEMPTS and no clear pivot → retry is still in budget
         # re-read the failure before retrying — do not blindly re-execute
 ```
 
@@ -94,7 +95,7 @@ while task_not_complete:
 
 Before the N+1 attempt, complete this articulation:
 
-> *"Attempt [N] failed with [failure mode]. My prior assumption was [X]. That assumption is now falsified. My new approach is [Y], which is different because [Z]. If this assumption is also wrong, I will surface a stuck diagnosis."*
+> *"Attempt [N] failed with [failure mode]. Based on [observed evidence], I now believe [prior assumption] was wrong. My new approach is [Y], which differs because [Z]: it tests a different hypothesis about the root cause. If this approach also fails, I will surface a stuck diagnosis."*
 
 If the articulation would truthfully read: *"I'm trying the same thing again but phrasing it slightly differently"* — that is a red flag. Do not proceed. Move directly to escalation.
 
@@ -144,19 +145,21 @@ Unless the failure mode is explicitly identified as transient (rate limit, netwo
 
 - **N=1** is too aggressive. A single failure should prompt re-reading the error and confirming the hypothesis is falsified before pivoting — not an immediate unconditional pivot.
 - **N=2** matches the human heuristic: if a second attempt with identical logic fails, the logic is wrong, not execution. This is the threshold codified in the autogent `when-debugging` playbook.
-- **N=3** may be appropriate for sub-problems with a known base rate of same-approach retries that are genuinely expected before the hypothesis is resolvable (e.g., lock contention that may take 2 retries to clear even without a strategy change). Require explicit documentation of why N=3 is chosen for a given sub-problem.
+- **N=3** may be appropriate for sub-problems with a known base rate of same-approach retries that are legitimately expected before the hypothesis is resolvable (e.g., lock contention that may require 2 retries to clear even without a strategy change). Require explicit documentation of why N=3 is chosen for a given sub-problem.
 
-Set the threshold **per sub-problem** before starting that sub-problem — different sub-problems in the same task can legitimately have different retry characteristics. Do not use a single task-level threshold that overrides per-sub-problem judgment. Do not adjust a sub-problem's threshold mid-flight — mid-run threshold increases defeat the purpose.
+Set the threshold **per sub-problem** before starting that sub-problem — different sub-problems in the same task can legitimately have different retry characteristics. Do not use a single task-level threshold that overrides per-sub-problem judgment.
+
+Do not **increase** a sub-problem's threshold mid-flight — mid-run increases defeat the purpose. This is distinct from pivoting: adopting a new strategy (which resets the counter to 0) is always permitted and does not require waiting for the threshold to be reached. The prohibition is on raising N after the sub-problem has begun, not on switching strategies.
 
 ## Evidence
 
-**autogent PLAYBOOK `when-debugging` trigger**: codified as "A fix doesn't work after 2 attempts → MUST load section." This is a standing operational rule derived from sprint postmortem analysis. The 2-attempt threshold was not set by fiat; it emerged from observing that agents rarely recover a same-approach retry on attempt 3.
+**autogent PLAYBOOK `when-debugging` trigger**: codified as "A fix doesn't work after 2 attempts → MUST load section." This is a standing operational rule derived from sprint postmortem analysis, active as of 2026. The 2-attempt threshold was not set by fiat; it emerged from observing that agents rarely recover a same-approach retry on attempt 3.
 
-**realestate-radar geocoding debug chain (PRs #107–#109)**: three consecutive PRs each inherited the prior PR's incorrect root-cause assumption — first attributing geocoding failures to query format, then to house-number stripping, then to URL format. The actual root cause (full-width digit normalization, NFKC) was found only on PR #109. A max-retry-pivot rule with N=2 would have forced a pivot at PR #108 and likely surfaced the encoding root cause one PR earlier.
+**realestate-radar geocoding debug chain (PRs #107–#109, 2026)**: three consecutive PRs each inherited the prior PR's incorrect root-cause assumption — first attributing geocoding failures to query format, then to house-number stripping, then to URL format. The actual root cause (full-width digit normalization, NFKC) was found only on PR #109. A max-retry-pivot rule with N=2 would have forced a pivot at PR #108 and likely surfaced the encoding root cause one PR earlier. This chain is specifically documented in the autogent CONTEXT.md and post-mortem records.
 
-**Sprint timeout post-mortems**: multiple sprint sessions in the autogent system terminated with a timeout rather than a result, and post-mortem review found the final N tool calls were structurally identical to the prior N calls — same query, same file, same command. No progress was made in the final third of the context window. A max-retry-pivot check at the approach level would have halted the loop and produced a stuck diagnosis instead.
+**Sprint timeout post-mortems (multiple instances, 2026)**: multiple sprint sessions in the autogent system terminated with a timeout rather than a result. Post-mortem review of at least three independent sessions found the final tool calls were structurally identical to earlier calls — same query, same file, same command — with no progress in the final third of the context window. These are documented in the autogent operational records and CONTEXT.md gotcha entries.
 
-**Evidence level: strong** — the 2-attempt rule is an active, standing operational directive (not a retrospective observation), supported by at least two independent documented multi-attempt failure chains and a pattern of sprint timeout post-mortems attributable to same-approach cycling.
+**Evidence level: strong** — the 2-attempt rule is an active, standing operational directive (not a retrospective observation). Two independently documented multi-attempt failure chains (the PLAYBOOK trigger and the geocoding PR sequence) and multiple sprint timeout post-mortem records attributable to same-approach cycling provide corroborating evidence across distinct failure modes.
 
 ## Tradeoffs
 
@@ -177,3 +180,4 @@ Set the threshold **per sub-problem** before starting that sub-problem — diffe
 - **[Constraint Falsification Before Planning](/agent-prompt-patterns/patterns/constraint-falsification)** — explicitly falsify blocking assumptions before accepting them. Max-retry-pivot is triggered *after* a failure; constraint falsification is applied *before* each attempt to ensure the assumption being tested is worth testing.
 - **[Hypothesis Before Action](/agent-prompt-patterns/patterns/hypothesis-before-action)** — states an explicit falsifiable hypothesis before each intervention. Max-retry-pivot depends on hypothesis-before-action: to count approach classes, the agent must have articulated what it believes and why. Without an explicit hypothesis, "approach class" cannot be reliably determined.
 - **[Operator-Blocked Escalation Ladder](/agent-prompt-patterns/patterns/operator-blocked-escalation-ladder)** — the escalation path when all pivots are exhausted. Max-retry-pivot defines *when* to escalate; the escalation ladder defines *how* — which channel, what format, what priority.
+- **[Rate-Limit Back-Off](/agent-prompt-patterns/patterns/rate-limit-back-off)** — the adjacent pattern for transient failures that are genuinely expected to resolve on retry without a strategy change (rate limits, network flaps). Max-retry-pivot applies when the failure is non-transient; rate-limit back-off applies when it is. Both patterns prevent blind retries; they differ in whether retrying the same approach is the correct response.

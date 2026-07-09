@@ -3,7 +3,7 @@ title: "Operator-Blocked Escalation Ladder"
 category: "agent-autonomy"
 evidenceLevel: "strong"
 summary: "When a needs-input issue stalls on human response, apply a tiered escalation ladder with pre-declared defaults and deadlines. File with an explicit auto-decide date. Post a warning one day before. Act on defaults or close not_planned on the date. Never age past 14 days silently."
-relatedPatterns: ["decision-ownership", "bounded-autonomy", "uncertainty-gated-irreversible-action"]
+relatedPatterns: ["decision-ownership", "bounded-autonomy", "uncertainty-gated-irreversible-action", "max-retry-pivot"]
 tags: ["escalation", "needs-input", "autonomy", "stall-prevention", "defaults", "deadlines", "single-operator", "pipeline"]
 ---
 
@@ -64,7 +64,7 @@ For a **low-stakes** issue filed on Monday with a 3-day auto-decide: warning fir
 **Stake classification:**
 
 | Stakes | Characteristics | Action at auto-decide date |
-|--------|----------------|--------------------------|
+|--------|----------------|---------------------------|
 | Low | Reversible, no user-facing behavior change, safe defaults obvious | Proceed with defaults |
 | Medium | Some user-facing impact, but contained and fixable | Proceed with defaults + prominent notification |
 | High | Architecture, product direction, kill/pivot, irreversible | Close `not_planned` — force explicit reopen |
@@ -100,3 +100,4 @@ For a **low-stakes** issue filed on Monday with a 3-day auto-decide: warning fir
 - **[Decision Ownership](/agent-prompt-patterns/patterns/decision-ownership)** — decision ownership clarifies who owns a decision and when to act without asking; the escalation ladder covers what happens when that owner is unresponsive across sessions
 - **[Bounded Autonomy](/agent-prompt-patterns/patterns/bounded-autonomy)** — bounded autonomy defines the scope of what an agent can do unilaterally; the escalation ladder defines what happens when an item falls outside that scope and the operator is unavailable
 - **[Uncertainty-Gated Irreversible Action](/agent-prompt-patterns/patterns/uncertainty-gated-irreversible-action)** — uncertainty gating prevents acting under epistemic uncertainty; the escalation ladder handles temporal uncertainty (operator response timing), not epistemic uncertainty
+- **[Max-Retry Pivot](/agent-prompt-patterns/patterns/max-retry-pivot)** — max-retry-pivot defines when to escalate after N same-approach failures within a task; the escalation ladder defines how to handle the escalation when the operator is the required next step — including defaults, deadlines, and enforcement mechanisms.
