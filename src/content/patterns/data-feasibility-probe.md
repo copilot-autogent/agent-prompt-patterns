@@ -77,28 +77,36 @@ For scraped sources, check `robots.txt` and the site's terms of service **before
 
 The probe does not need to be comprehensive — a single `curl` and a field check is often sufficient. The examples below are illustrative starting points; adapt them to your platform.
 
+**JSON API probe:**
+
 ```bash
-# --- Probe a JSON API endpoint ---
-# Use set -o pipefail so curl failures aren't masked by jq.
-# -sf: -s silences progress, -f exits non-zero on 4xx/5xx
 #!/usr/bin/env bash
-set -o pipefail
+set -euo pipefail
+# -sf: -s silences progress, -f exits non-zero on 4xx/5xx
 RESPONSE=$(curl -sf "https://api.example.gov/v1/data?limit=1") \
   || { echo "PROBE FAILED: endpoint unreachable or returned error status"; exit 1; }
-# jq exits 0 even for null — check for the specific field explicitly with has():
-echo "$RESPONSE" | jq -e '(if type=="array" then .[0] else .results[0] end) | has("expected_field_name")' \
-  && echo "✅ Field present" || echo "❌ Field missing or null"
+# Use has() to verify key presence; note has() returns true even if value is null.
+# To also check non-null, extend: .expected_field_name != null
+RECORD=$(echo "$RESPONSE" | jq '(if type=="array" then .[0] else (.results // [])[0] // {} end)')
+if echo "$RECORD" | jq -e 'has("expected_field_name")' > /dev/null 2>&1; then
+  echo "✅ Field key present"
+else
+  echo "❌ Field missing — check field name and response schema"
+fi
+```
 
-# --- Download a CSV zip and verify a column name is present ---
-#!/usr/bin/env bash   # required for pipefail; mktemp --suffix is GNU coreutils (BSD: mktemp /tmp/plvr.XXXXXX.zip)
-set -o pipefail
+**CP950-encoded CSV bulk-download probe** (Taiwan PLVR and similar gov datasets):
+
+```bash
+#!/usr/bin/env bash   # mktemp --suffix is GNU coreutils; BSD: mktemp /tmp/plvr.XXXXXX.zip
+set -euo pipefail
 PROBE_TMP=$(mktemp --suffix=.zip)
 trap 'rm -f "$PROBE_TMP"' EXIT
 
 curl -sf "https://plvr.land.moi.gov.tw/DownloadOpenData?type=zip&fileName=lvr_landcsv.zip" \
   -o "$PROBE_TMP"
-# Decode Big5/CP950 before text operations
-HEADER=$(unzip -p "$PROBE_TMP" a_lvr_land_a.csv | head -1 | iconv -f cp950 -t utf-8)
+# Decode Big5/CP950; unzip-to-head pipe may emit SIGPIPE — redirect stderr to suppress
+HEADER=$(unzip -p "$PROBE_TMP" a_lvr_land_a.csv 2>/dev/null | head -1 | iconv -f cp950 -t utf-8)
 # Use if/then/else — avoids the A && B || C pitfall (C executes if B fails, not only if A fails)
 if echo "$HEADER" | tr ',' '\n' | tr -d '\r' | grep -qFx "公告現值"; then
   echo "✅ Field found"
@@ -107,7 +115,7 @@ else
 fi
 echo "Column count: $(echo "$HEADER" | tr ',' '\n' | wc -l)"
 # Sample a data row to check for column-count drift:
-SAMPLE=$(unzip -p "$PROBE_TMP" a_lvr_land_a.csv | sed -n '2p' | iconv -f cp950 -t utf-8)
+SAMPLE=$(unzip -p "$PROBE_TMP" a_lvr_land_a.csv 2>/dev/null | sed -n '2p' | iconv -f cp950 -t utf-8)
 echo "Data row column count: $(echo "$SAMPLE" | tr ',' '\n' | wc -l)"
 ```
 
