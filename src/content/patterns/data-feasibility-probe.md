@@ -61,9 +61,9 @@ YES: "requires field `公告現值` (announced land value)
 ```
 
 For each dependency, capture:
-- **Source URL** — exact endpoint or download URL
+- **Source URL** — base URL of the endpoint or download (omit API keys, query-string tokens, and signed URL parameters; record only the path that identifies the resource)
 - **Expected field** — exact column name, JSON key, or DOM selector
-- **Auth requirements** — whether the source requires API key, token, or login
+- **Auth requirements** — whether the source requires API key, token, or login (note the requirement, not the credential value)
 - **Update frequency** — how often the source changes (daily, quarterly, ad-hoc)
 
 ### Step 2: Run a Probe
@@ -73,6 +73,8 @@ A probe answers three questions:
 2. Does the response contain the expected field or column?
 3. Is the schema structurally consistent with what the feature requires?
 
+For scraped sources, check `robots.txt` and the site's terms of service **before** making the probe request. The probe itself is an HTTP request to the target — if scraping is prohibited, the probe is the prohibited action. Confirm scraping is permitted, then probe.
+
 The probe does not need to be comprehensive — a single `curl` and a field check is often sufficient. See `external-data-source-probe` for specific probe scripts for JSON APIs, CSV bulk-downloads, and scraped content.
 
 **Probe reliability notes:**
@@ -80,7 +82,7 @@ The probe does not need to be comprehensive — a single `curl` and a field chec
 - **Dataset joins require join-key compatibility**: verifying that both sources contain the expected fields is necessary but not sufficient. Check that the join key has compatible normalization (same encoding, same ID format, same cardinality range) in both datasets. Two sources can each contain a field while being unusable for a join due to key mismatch.
 - **Prefer header-name verification over column position**: record the field's column name as it appears in the header row, not its absolute position. Column positions shift when format updates add or remove fields; the name is the stable identifier.
 
-> **Probe confidence floor**: check at least one representative data row, not just the header. A field present in the header but null in 95% of rows is effectively absent for most features.
+> **Probe confidence floor**: sample at least 50 representative rows (or rows spanning the expected time range), not just the header. A field present in the header but null in 95% of rows is effectively absent for most features. If the dataset is too large to sample 50 rows quickly, sample from the most recent period and one historical period; record the null rate in the probe note.
 
 ### Step 3: Record the Probe Result in the Issue Body
 
@@ -115,7 +117,7 @@ This note serves two functions:
 | Field not found; alternate source unknown | `status:needs-input` — human decision required on source |
 | Endpoint requires auth not yet provisioned | `status:blocked` — unblock auth first |
 
-**Default when in doubt**: if the probe cannot be completed (endpoint unreachable from the current environment, data download too large to sample quickly), set `status:needs-design` with a note explaining why the probe was inconclusive. Do not set `status:draft` when the data dependency is unverified.
+**Default when in doubt**: if the probe cannot be completed because the endpoint is unreachable from the current environment (VPN requirement, egress restriction, environment-specific network block), set `status:blocked` — this is an operational access issue, not a design question. If the probe is inconclusive for other reasons (data download too large to sample quickly, response format unrecognized), set `status:needs-design` with a note explaining why. Do not set `status:draft` when the data dependency is unverified.
 
 ### Integration Into the Issue-Filing Workflow
 
@@ -128,13 +130,20 @@ Issue draft assembled
           │
           └─ YES
                │
+               ├─ Scraped source? Check robots.txt/TOS first
+               │     TOS prohibits scraping? ──► Set status:needs-input
+               │
                ├─ Run probe(s) for each dependency
                │
-               ├─ All probes passed?             YES ──► Set status:draft
+               ├─ Any probe unreachable (network/env)? YES ──► Set status:blocked
                │
-               ├─ Any probe inconclusive?        YES ──► Set status:needs-design
+               ├─ Any probe failed (field missing)?   YES ──► Set status:needs-input or status:blocked
                │
-               └─ Any probe failed?              YES ──► Set status:needs-input or status:blocked
+               ├─ Any probe inconclusive (encoding,    YES ──► Set status:needs-design
+               │   null rate, join-key, TOS, limits)?
+               │
+               └─ All probes passed (field present,    YES ──► Set status:draft
+                   HTTP 2xx, non-null, no blockers)?
 ```
 
 ## Evidence
