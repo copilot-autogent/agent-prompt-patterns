@@ -2,7 +2,7 @@
 title: "Operator-Blocked Escalation Ladder"
 category: "agent-autonomy"
 evidenceLevel: "strong"
-summary: "When an agent-filed issue is blocked on human input, a tiered escalation ladder with pre-declared defaults and explicit deadlines prevents indefinite stalls. Day 0: file with defaults. Day 3: auto-decide threshold comment. Day 7: act on defaults or close as not_planned. Never let needs-input items age beyond 14 days without an escalation comment."
+summary: "When a needs-input issue stalls on human response, apply a tiered escalation ladder with pre-declared defaults and deadlines. Day 0: file with defaults + auto-decide date. Day 3: warning comment. Day 7: act on defaults or close not_planned. Never age past 14 days silently."
 relatedPatterns: ["decision-ownership", "bounded-autonomy", "uncertainty-gated-irreversible-action"]
 tags: ["escalation", "needs-input", "autonomy", "stall-prevention", "defaults", "deadlines", "single-operator", "pipeline"]
 ---
@@ -50,15 +50,15 @@ The core tension: the agent cannot act without a decision, and the human cannot 
 | Day | Action |
 |-----|--------|
 | Day 0 | File issue with `status:needs-input` + pre-declared defaults + auto-decide date in the body |
-| Day 3 (or auto-decide date) | Post comment: "Auto-decide threshold reached. No objection by EOD → **[low/medium-stakes]** sprint proceeds with: [explicit defaults]; **[high-stakes]** will close as not_planned. Reopen or comment to override." |
-| Day 7 | **Low/medium-stakes with safe defaults**: remove `status:needs-input`, apply `status:draft`, post "Proceeding with defaults: [list]". **High-stakes (architecture/kill-pivot)**: close `not_planned` with "Reopen when ready to decide." |
+| Day 3 (or auto-decide date) | Post warning comment: "Auto-decide threshold reached. If no response by [auto-decide date]: **[low/medium-stakes]** will proceed with defaults — [explicit defaults]; **[high-stakes]** will close as not_planned. Respond or reopen to override." |
+| Day 7 (or auto-decide date) | **Low/medium-stakes with safe defaults**: remove `status:needs-input`, apply `status:draft`, post "Proceeding with defaults: [list] — override window passed". **High-stakes (architecture/kill-pivot)**: close `not_planned` with "Reopen when ready to decide." First check current issue state; do not act if already resolved. |
 | Never | Let `needs-input` age > 14 days without an escalation comment or closure |
 
 **Pre-declared defaults are non-negotiable**: "Proceeding unless you object" with no stated plan is ambiguity, not a default. A real default: "If no objection, will implement with difficulty tier fixed at current user median, not adaptive." The operator must be able to ratify or override in one sentence; that's only possible if they know exactly what they're ratifying.
 
 **Status label transitions are exclusive**: when transitioning an issue out of `needs-input`, always remove the old label before applying the new one. An issue carrying both `status:needs-input` and `status:draft` will match `needs-input` sweepers and `draft` dispatchers simultaneously — causing double processing. Remove `status:needs-input` first, then apply the new status.
 
-**Soft holds require enforcement**: Writing a recommendation to hold something in memory or a comment doesn't stop crons. To actually gate work: (a) apply a `status:blocked` or `hold` label that scheduler crons filter out, (b) close the issue with a note to reopen after the decision, or (c) pause the specific cron task. Advisory-only holds evaporate at session end.
+**Soft holds require enforcement**: Writing a recommendation to hold something in memory or a comment doesn't stop crons. To actually gate work: (a) apply a `status:blocked` or `hold` label — but only if your scheduler crons are explicitly configured to filter it out (verify before relying on this); (b) close the issue with a note to reopen after the decision; or (c) pause the specific cron task. Option (b) is the most universally reliable since it changes issue state, not just labels. Advisory-only holds evaporate at session end.
 
 **Stake classification:**
 
