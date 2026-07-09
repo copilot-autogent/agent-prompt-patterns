@@ -1,7 +1,7 @@
 ---
 title: "Ambiguity Threshold Clarification"
 category: "task-design"
-evidenceLevel: "strong"
+evidenceLevel: "moderate"
 summary: "When an agent receives an underspecified or ambiguous instruction, it needs a principled threshold for when to stop and ask vs. proceed with a documented inference. Without one, agents either over-ask (friction, kills autonomous value) or under-ask (wrong-scope work, wasted sprints, reverts). Apply a two-branch decision rule: ask when ambiguity touches ≥50% of deliverable scope or a constraint-class field; infer when the ambiguity is an implementation detail and the conservative path is safe and reversible. When asking, always propose a specific default. When inferring, always surface it."
 relatedPatterns: ["scope-boundary-declaration", "explicit-skip-permission", "bounded-autonomy", "decision-ownership"]
 tags: ["clarification", "ambiguity", "inference", "scope", "ask-before-guessing", "autonomous-agent", "task-design", "underspecified-instructions"]
@@ -41,7 +41,7 @@ Apply both criteria in parallel. If **any** ask-trigger fires, ask. Only infer w
 
 **Ask when:**
 
-1. **Scope impact ≥50%**: The unclear element affects the majority of the deliverable. If the ambiguity determines what to build rather than how to build it, the agent cannot safely begin.
+1. **Scope impact ≥50%**: The unclear element affects the majority of the deliverable. "Deliverable scope" means the set of files, modules, or behaviours that the task requires the agent to produce or modify. If removing the ambiguous element would eliminate more than half of those targets, it is a scope-level ambiguity. If it only affects *how* an already-agreed target is built, it is an implementation-level ambiguity. If the ambiguity determines what to build rather than how to build it, the agent cannot safely begin.
 2. **Constraint-class field**: The ambiguity is in one of these categories — security boundary, destructive/irreversible action, external API contract, data schema definition. Errors in constraint-class fields are expensive and may be unrecoverable.
 3. **Incompatible interpretations with no safe default**: Two plausible readings produce outputs that cannot be merged or reconciled. There is no single "most conservative" path — both paths are risky and different.
 
@@ -58,8 +58,9 @@ Never surface ambiguity as an open-ended question. Open-ended questions ("what d
 **Format for asking:**
 
 1. **Name the ambiguity explicitly**: State the two (or more) interpretations with the consequence of each.
-2. **Propose a specific default with a time window**: "I'll proceed with [default] unless you correct me within [N hours / by [time]]." This unblocks work on a timer and gives the operator a concrete position to accept or reject.
+2. **Propose a specific default — when one exists**: "I'll proceed with [default] unless you correct me within [N hours / by [time]]." This unblocks work on a timer and gives the operator a concrete position to accept or reject.
    - **Exception — constraint-class ambiguities do not get a timeout default.** If the ask was triggered by a security boundary, destructive/irreversible action, external API contract, or schema change, the agent must block until the operator explicitly confirms. A timeout expiry must NOT authorize irreversible work; instead, re-ask or park the task as `status:needs-input`.
+   - **Exception — "no safe default" path does not get a timeout default.** If the ask was triggered because two interpretations are genuinely incompatible and neither is safer, there is no valid default to propose. Ask without a default; present both interpretations with their consequences and wait for an explicit choice.
 3. **One question per ask**: Do not batch multiple clarifications into one message. Each ambiguity is an independent decision. Batching forces the operator to parse a compound question and increases the chance of a partial or ambiguous answer. *Exception: when two ambiguities are tightly coupled — resolving one constrains the other — surface both together, but label them clearly as related and accept an answer to either.*
 
 **Example:**
@@ -90,7 +91,8 @@ Ambiguous instruction received
           ├─ Is it a constraint-class field?        ──YES──► Ask (NO timeout default; block until confirmed)
           │     (security, destructive, API, schema)
           │
-          ├─ No safe default / incompatible paths?  ──YES──► Ask (with default)
+          ├─ No safe default / incompatible paths?  ──YES──► Ask (NO timeout default; present both
+          │                                                     interpretations and wait for choice)
           │
           ├─ All infer conditions met?              ──YES──► Infer + log
           │     (impl detail, reversible, domain default)
@@ -103,7 +105,7 @@ Ambiguous instruction received
 
 ## Evidence
 
-**autogent PLAYBOOK `when-triaging-feedback`**: Encodes "ask-before-guessing" as a non-negotiable rule derived from multiple observed sprint failures. The rule was promoted from a guideline to a non-negotiable after repeated incidents where agents made scope assumptions that invalidated entire sprint outputs.
+**autogent sprint log evidence**: Encodes "ask-before-guessing" as a non-negotiable operational rule derived from multiple observed sprint failures across autogent-managed projects. The rule was promoted from a guideline to a non-negotiable after repeated incidents where agents made scope assumptions that invalidated entire sprint outputs.
 
 **factor-dashboard retro**: Identified "building without a scoped question answered" as the root cause of 70 feature implementations with no information architecture, producing a 67-panel dashboard that was functionally unusable. None of the 70 features was technically wrong; the scope itself was never confirmed. A single clarification question at the ideation stage ("which user question does each of these panels answer?") would have filtered out most of the unnecessary work before any code was written.
 
@@ -119,6 +121,6 @@ Ambiguous instruction received
 
 **Inference logging overhead**: Surfacing every inference adds words to task summaries. For long tasks with many minor inferences, this can add noise. Filter to inferences that meet the domain-default bar — inferences below that bar (e.g., alphabetical sort order for a list) don't need explicit logging. Only inferences that could plausibly be overridden by operator preference need to be surfaced.
 
-**Over-asking creep**: Teams that adopt this pattern sometimes recalibrate the threshold too conservatively, asking about implementation details that clearly fall below the 50% scope bar. The constraint-class check is the correct filter for these edge cases — if it's not a constraint-class field and scope impact is below 50%, infer.
+**Over-asking creep**: Teams that adopt this pattern sometimes recalibrate the threshold too conservatively, asking about implementation details that clearly fall below the 50% scope bar. The constraint-class check is the correct filter for these edge cases — if it's not a constraint-class field, scope impact is below 50%, and the interpretations are compatible (i.e., both paths could coexist or one is clearly safer), infer rather than ask.
 
 **Single-question discipline**: Asking one question per ambiguity is slower than batching. The benefit is a higher-quality, unambiguous response. Batched questions frequently receive partial answers that produce new ambiguity. The time cost of single-question discipline is almost always recovered by avoiding follow-up clarification rounds.
