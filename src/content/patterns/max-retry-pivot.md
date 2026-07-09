@@ -46,10 +46,10 @@ An approach class is defined by three axes. Two attempts belong to the same clas
 | Axis | Same class | Different class |
 |---|---|---|
 | **Tool** | Same API call, same shell command, same file operation | Different API, different tool, different data source |
-| **Data / Input** | Same query, same file path, same parameters | Different query terms, different normalization, different input |
+| **Data / Input** | Same underlying data source with the same root assumption | Different normalization, different source, or a new assumption about what the input contains |
 | **Constraint model** | Same assumption about why prior attempt failed | Inversion of the prior assumption, or a new hypothesis |
 
-A minor textual variation (different wording in a query, slightly different parameters) that does not change the underlying assumption is **the same class**. The test: "If my assumption about the failure is unchanged, it's the same class."
+**The constraint model axis is the deciding one.** Query wording, parameter tweaks, and minor input variations are the same class when the underlying assumption about the failure is unchanged. A different API call that still assumes the same wrong root cause is also the same class. The test: "If my assumption about why the prior attempt failed is unchanged, it's the same class — regardless of how the invocation differs superficially."
 
 ### Step 2: Track the attempt counter (per sub-problem)
 
@@ -63,18 +63,28 @@ while task_not_complete:
     if result.succeeded:
         attempt_count = 0
         # continue with next step
+
     else:
         attempt_count += 1
 
         if attempt_count >= MAX_ATTEMPTS:
-            pivot_or_escalate(current_strategy, result, attempt_count)
-            break  # do NOT proceed to attempt N+1 without a documented pivot
+            new_strategy = identify_pivot(current_strategy, result)
+
+            if new_strategy is None:
+                # No pivot available — escalate with a structured stuck diagnosis
+                escalate(current_strategy, result, attempt_count)
+                break
+
+            # Genuine pivot found: reset counter and continue with new strategy
+            current_strategy = new_strategy
+            attempt_count = 0
+            # loop continues: next iteration executes current_strategy (the pivot)
 
         # implicit: attempt_count < MAX_ATTEMPTS → retry is still in budget
-        # but re-read the failure before retrying — do not blindly re-execute
+        # re-read the failure before retrying — do not blindly re-execute
 ```
 
-**Reset the counter only on a genuine pivot**: if the new strategy passes the "approach class" test above (different tool, data, or constraint model), reset `attempt_count = 0`. If it does not, do not reset — carry the counter forward.
+**Reset the counter only on a genuine pivot**: if the new strategy passes the approach-class test above (different tool, data source, or constraint model), reset `attempt_count = 0`. If it does not, do not reset — carry the counter forward.
 
 ### Step 3: Mandatory pivot check before attempt N+1
 
@@ -146,14 +156,14 @@ Set the threshold before the task starts. Do not adjust it mid-task — mid-run 
 
 ## Tradeoffs
 
-**Benefit**: Loops that would otherwise exhaust the context window and produce a timeout failure instead terminate with a structured stuck diagnosis after at most N+1 attempts. Recovery time drops from "full context window + timeout" to "N attempts + pivot or escalation."
+**Benefit**: Loops that would otherwise exhaust the context window and produce a timeout failure instead terminate at the threshold: either with a genuine pivot that changes the strategy, or with a structured stuck diagnosis when no pivot is available. Recovery time drops from "full context window + timeout" to "N attempts + pivot-or-escalate."
 
 **Cost**: Requires the agent to classify each attempt's "approach class" before executing it — a small cognitive overhead per attempt. For tasks with a very low retry rate, the classification cost may exceed the loop-prevention benefit.
 
 **Watch out for**:
 
 - **Misclassifying transient failures as same-class**: if the failure mode changes between attempts (different error, different partial output), the attempts may not be same-class even if the tool is the same. The constraint model axis is the deciding one: if the assumption about the failure changes, it's a different class.
-- **Pivot that is nominally different but functionally identical**: changing one parameter of a query while keeping the same underlying data source and assumption is not a genuine pivot. Require the articulation to name a different tool or a different constraint model, not just different parameter values.
+- **Pivot that is nominally different but functionally identical**: changing one parameter of a query while keeping the same underlying data source and assumption is not a genuine pivot. Require the articulation to name a different constraint model, not just different parameter values.
 - **Threshold set too high for budget-constrained tasks**: in a sprint with a 4-hour wall clock, N=5 may use up the entire budget on retries for a single sub-problem. Scale the threshold to the task's total budget.
 - **Counter not reset on genuine progress**: if a pivot succeeds on the first attempt, the counter should reset to zero before the next sub-problem. Carrying a counter across unrelated sub-problems produces false positives.
 
