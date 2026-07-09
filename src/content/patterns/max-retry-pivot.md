@@ -41,21 +41,23 @@ It does **not** apply to:
 
 ### Step 1: Define "approach class" for the current task
 
-An approach class is defined by three axes. Two attempts belong to the same class if they share the same values on all three:
+**Two attempts belong to the same class if they share the same constraint model — the same assumption about why the prior attempt failed.** The tool used and the input provided are secondary signals that often *reveal* whether the constraint model changed, but they are not themselves the deciding criterion.
 
-| Axis | Same class | Different class |
-|---|---|---|
-| **Tool** | Same API call, same shell command, same file operation | Different API, different tool, different data source |
-| **Data / Input** | Same underlying data source with the same root assumption | Different normalization, different source, or a new assumption about what the input contains |
-| **Constraint model** | Same assumption about why prior attempt failed | Inversion of the prior assumption, or a new hypothesis |
+| Axis | Role | Same class indicator | Different class indicator |
+|---|---|---|---|
+| **Constraint model** | **Primary (deciding)** | Same assumption about failure cause | New hypothesis or inverted assumption |
+| **Tool** | Secondary | Same API call, same shell command | Different tool, different data source |
+| **Data / Input** | Secondary | Same underlying source, same assumptions about the input | Different normalization, different source |
 
-**The constraint model axis is the deciding one.** Query wording, parameter tweaks, and minor input variations are the same class when the underlying assumption about the failure is unchanged. A different API call that still assumes the same wrong root cause is also the same class. The test: "If my assumption about why the prior attempt failed is unchanged, it's the same class — regardless of how the invocation differs superficially."
+**Using the secondary axes**: a different API call that still assumes the same wrong root cause is the same class. A superficially identical tool invocation with a genuinely different hypothesis about the failure is a different class. When in doubt, ask: "Has my model of *why* this is failing changed?" If no, it's the same class.
 
 ### Step 2: Track the attempt counter (per sub-problem)
 
+The counter tracks same-class attempts. An agent may pivot at any point when a failure clearly falsifies the current hypothesis — the threshold enforces a **maximum** on same-class retries; it does not require exhausting all N attempts before pivoting.
+
 ```
 attempt_count = 0       # resets when a genuinely different strategy is adopted
-MAX_ATTEMPTS = 2        # default threshold; adjust to 3 for tasks with high transient-failure risk
+MAX_ATTEMPTS = 2        # default threshold per sub-problem
 
 while task_not_complete:
     result = execute(current_strategy)
@@ -67,24 +69,26 @@ while task_not_complete:
     else:
         attempt_count += 1
 
-        if attempt_count >= MAX_ATTEMPTS:
-            new_strategy = identify_pivot(current_strategy, result)
+        # Evaluate after each failure — pivot as soon as the hypothesis is falsified,
+        # do not wait for the counter to reach MAX_ATTEMPTS if a pivot is obvious.
+        new_strategy = identify_pivot_if_hypothesis_falsified(current_strategy, result)
 
-            if new_strategy is None:
-                # No pivot available — escalate with a structured stuck diagnosis
-                escalate(current_strategy, result, attempt_count)
-                break
-
-            # Genuine pivot found: reset counter and continue with new strategy
+        if new_strategy is not None:
+            # Genuine pivot: reset counter and continue with new strategy
             current_strategy = new_strategy
             attempt_count = 0
             # loop continues: next iteration executes current_strategy (the pivot)
 
-        # implicit: attempt_count < MAX_ATTEMPTS → retry is still in budget
+        elif attempt_count >= MAX_ATTEMPTS:
+            # Threshold reached and no pivot available — escalate
+            escalate(current_strategy, result, attempt_count)
+            break
+
+        # implicit: attempt_count < MAX_ATTEMPTS and no pivot yet → retry is still in budget
         # re-read the failure before retrying — do not blindly re-execute
 ```
 
-**Reset the counter only on a genuine pivot**: if the new strategy passes the approach-class test above (different tool, data source, or constraint model), reset `attempt_count = 0`. If it does not, do not reset — carry the counter forward.
+**Reset the counter only on a genuine pivot**: if the new strategy passes the approach-class test above (different constraint model), reset `attempt_count = 0`. If it does not, do not reset — carry the counter forward.
 
 ### Step 3: Mandatory pivot check before attempt N+1
 
@@ -115,7 +119,7 @@ STUCK DIAGNOSIS — max-retry-pivot threshold reached.
 
 Sub-problem: [what was being attempted, narrowly scoped]
 Attempts: [N]
-Approach class: [same tool / same data / same constraint model across all attempts]
+Approach class: [same constraint model across all attempts — describe the shared assumption]
 Failure mode: [consistent error or wrong output observed each time]
 Pivots considered: [list alternatives evaluated and why each was ruled out]
 Recommended next step: [what a human or a differently-instrumented agent should try]
@@ -136,13 +140,13 @@ Unless the failure mode is explicitly identified as transient (rate limit, netwo
 
 ## Calibrating the threshold
 
-**Default: N=2.** Rationale:
+**Default: N=2 per sub-problem.** Rationale:
 
-- **N=1** is too aggressive for tasks with legitimate transient failures. A single failure should prompt re-reading the error, not an immediate full pivot.
+- **N=1** is too aggressive. A single failure should prompt re-reading the error and confirming the hypothesis is falsified before pivoting — not an immediate unconditional pivot.
 - **N=2** matches the human heuristic: if a second attempt with identical logic fails, the logic is wrong, not execution. This is the threshold codified in the autogent `when-debugging` playbook.
-- **N=3** may be appropriate when the task has a high base rate of transient failures (e.g., external API with known intermittent availability). In that case, require explicit documentation of why N=3 is chosen.
+- **N=3** may be appropriate for sub-problems with a known base rate of same-approach retries that are genuinely expected before the hypothesis is resolvable (e.g., lock contention that may take 2 retries to clear even without a strategy change). Require explicit documentation of why N=3 is chosen for a given sub-problem.
 
-Set the threshold before the task starts. Do not adjust it mid-task — mid-run threshold increases defeat the purpose.
+Set the threshold **per sub-problem** before starting that sub-problem — different sub-problems in the same task can legitimately have different retry characteristics. Do not use a single task-level threshold that overrides per-sub-problem judgment. Do not adjust a sub-problem's threshold mid-flight — mid-run threshold increases defeat the purpose.
 
 ## Evidence
 
@@ -156,14 +160,14 @@ Set the threshold before the task starts. Do not adjust it mid-task — mid-run 
 
 ## Tradeoffs
 
-**Benefit**: Loops that would otherwise exhaust the context window and produce a timeout failure instead terminate at the threshold: either with a genuine pivot that changes the strategy, or with a structured stuck diagnosis when no pivot is available. Recovery time drops from "full context window + timeout" to "N attempts + pivot-or-escalate."
+**Benefit**: Loops that would otherwise exhaust the context window and produce a timeout failure instead terminate at the threshold: either with a genuine pivot that changes the strategy, or with a structured stuck diagnosis when no pivot is available. Recovery time drops from "full context window + timeout" to "N same-class attempts + pivot-or-escalate."
 
-**Cost**: Requires the agent to classify each attempt's "approach class" before executing it — a small cognitive overhead per attempt. For tasks with a very low retry rate, the classification cost may exceed the loop-prevention benefit.
+**Cost**: Requires the agent to classify each attempt's approach class before executing it — a small cognitive overhead per attempt. For tasks with a very low retry rate, the classification cost may exceed the loop-prevention benefit.
 
 **Watch out for**:
 
 - **Misclassifying transient failures as same-class**: if the failure mode changes between attempts (different error, different partial output), the attempts may not be same-class even if the tool is the same. The constraint model axis is the deciding one: if the assumption about the failure changes, it's a different class.
-- **Pivot that is nominally different but functionally identical**: changing one parameter of a query while keeping the same underlying data source and assumption is not a genuine pivot. Require the articulation to name a different constraint model, not just different parameter values.
+- **Pivot that is nominally different but functionally identical**: changing one parameter of a query while keeping the same underlying assumption is not a genuine pivot. Require the articulation to name a different constraint model, not just different parameter values.
 - **Threshold set too high for budget-constrained tasks**: in a sprint with a 4-hour wall clock, N=5 may use up the entire budget on retries for a single sub-problem. Scale the threshold to the task's total budget.
 - **Counter not reset on genuine progress**: if a pivot succeeds on the first attempt, the counter should reset to zero before the next sub-problem. Carrying a counter across unrelated sub-problems produces false positives.
 
