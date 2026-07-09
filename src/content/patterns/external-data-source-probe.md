@@ -60,51 +60,43 @@ YES: "requires field `公告現值` (announced land value) in column 14 of `a_lv
 
 **Step 2: Probe it**
 
-Run a minimal check to confirm the data is accessible and contains the expected field. The probe does not need to be production-grade — it needs to answer three questions:
+Run a minimal check to confirm the data is accessible and contains the expected field. The probe does not need to be comprehensive — it needs to answer three questions:
 
 1. Is the endpoint accessible (no auth error, no 404)?
 2. Does the response contain the expected field / column name?
 3. Is the schema at least structurally consistent with what the feature requires?
 
+> **Note**: The examples below are illustrative starting points. Adapt them to your platform; in particular: use `#!/usr/bin/env bash` for any multi-command script (pipefail is bash-only); handle encoding explicitly rather than piping raw bytes; and check exit codes throughout.
+
 ```bash
 # --- Probe a JSON API endpoint ---
-# -f exits non-zero on 4xx/5xx so the || branch fires on auth/404 failures
-curl -sf "https://api.example.gov/v1/data?limit=1" | jq '.results[0] | keys' \
-  || echo "PROBE FAILED: check endpoint availability and auth"
+# -sf: -s silences progress, -f exits non-zero on 4xx/5xx
+# Note: jq exits non-zero if the path doesn't match, but exits 0 for null;
+# check for null explicitly if field absence is the concern.
+curl -sf "https://api.example.gov/v1/data?limit=1" \
+  | jq 'if type=="array" then .[0] else .results[0] end | keys' \
+  || { echo "PROBE FAILED: endpoint unreachable or returned error status"; exit 1; }
 
-# --- Download a zip bundle and inspect the CSV header ---
-# --suffix keeps the .zip extension for unzip; mktemp keeps the path unique
-set -o pipefail   # so unzip failures propagate through the pipe
-PROBE_TMP=$(mktemp --suffix=.zip /tmp/plvr_probe_XXXXXX)
+# --- Download a CSV zip and verify a column name is present ---
+#!/usr/bin/env bash   # required for pipefail + mktemp --suffix
+set -o pipefail
+PROBE_TMP=$(mktemp --suffix=.zip)   # GNU coreutils; BSD: use mktemp /tmp/plvr.XXXXXX.zip
+trap 'rm -f "$PROBE_TMP"' EXIT
+
 curl -sf "https://plvr.land.moi.gov.tw/DownloadOpenData?type=zip&fileName=lvr_landcsv.zip" \
-  -o "$PROBE_TMP" \
-  && unzip -p "$PROBE_TMP" a_lvr_land_a.csv \
-     | head -1 \
-     | iconv -f big5 -t utf-8 2>/dev/null \        # PLVR CSVs are often Big5-encoded
-     | tr ',' '\n' | nl \
-  || echo "PROBE FAILED: download, extraction, or encoding error"
-rm -f "$PROBE_TMP"
-
-# --- Check that a specific column name is present in the header ---
-# PLVR bulk CSVs are frequently Big5/CP950; iconv before grep avoids silent no-match
-# on a UTF-8 literal pattern. Use exact matching (full field) to avoid false substring hits.
-DATA_URL="https://example.gov/open/data.csv"   # replace with actual URL
-curl -sf "$DATA_URL" \
-  | head -1 \
-  | iconv -f big5 -t utf-8 2>/dev/null \
-  | tr ',' '\n' \
-  | grep -Fx "公告現值" \
-  || echo "PROBE FAILED: field not found or encoding/endpoint issue"
-
-# --- Count columns to detect schema drift ---
-# split(',') is not CSV-safe; for a real column count use an actual CSV parser.
-# As a quick indicator (no quoted-comma fields in PLVR headers), tr-based count works:
-curl -sf "$DATA_URL" | head -1 | iconv -f big5 -t utf-8 2>/dev/null \
-  | awk -F',' '{print NR": "NF" columns"}'
-# If the source may contain quoted commas, use: python3 -c "import csv,sys; r=csv.reader(sys.stdin); print(len(next(r)),'columns')"
+  -o "$PROBE_TMP"
+# Decode Big5/CP950 before text operations; suppress errors for mixed-encoding rows
+HEADER=$(unzip -p "$PROBE_TMP" a_lvr_land_a.csv | head -1 | iconv -f cp950 -t utf-8)
+echo "$HEADER" | tr ',' '\n' | tr -d '\r' | grep -Fx "公告現值" \
+  && echo "✅ Field found" \
+  || echo "❌ Field not found — check column name and encoding"
+echo "Column count: $(echo "$HEADER" | tr ',' '\n' | wc -l)"
+# For schema drift detection, also sample a data row and compare its column count:
+SAMPLE=$(unzip -p "$PROBE_TMP" a_lvr_land_a.csv | sed -n '2p' | iconv -f cp950 -t utf-8)
+echo "Data row column count: $(echo "$SAMPLE" | tr ',' '\n' | wc -l)"
 ```
 
-> **Encoding note**: Taiwan PLVR bulk CSVs are frequently Big5/CP950-encoded. A UTF-8 `grep` pattern silently fails to match a Big5 column name even when the field exists. Always apply `iconv -f big5 -t utf-8` (or the equivalent NFKC normalization step) before any string comparison. See [Encoding-Aware Probing](#encoding-aware-probing-for-zh-tw-gov-data) below.
+> **Encoding note**: Taiwan PLVR bulk CSVs are CP950/Big5-encoded. A UTF-8 `grep` on raw bytes silently fails to match even when the field exists. Always decode with `iconv -f cp950 -t utf-8` before any string operation. NFKC normalization (for full-width digit fields) is a **separate** follow-on step applied after decoding — it is not an alternative to the decode step. See [Encoding-Aware Probing](#encoding-aware-probing-for-zh-tw-gov-data) below.
 
 **Step 3: Record findings in the issue body**
 
