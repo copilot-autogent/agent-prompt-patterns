@@ -85,9 +85,10 @@ set -euo pipefail
 # -sf: -s silences progress, -f exits non-zero on 4xx/5xx
 RESPONSE=$(curl -sf "https://api.example.gov/v1/data?limit=1") \
   || { echo "PROBE FAILED: endpoint unreachable or returned error status"; exit 1; }
-# Use has() to verify key presence; note has() returns true even if value is null.
-# To also check non-null, extend: .expected_field_name != null
-RECORD=$(echo "$RESPONSE" | jq '(if type=="array" then .[0] else (.results // [])[0] // {} end)')
+# Normalize to a single object; handle empty array and missing .results safely
+RECORD=$(echo "$RESPONSE" | jq '(if type=="array" then (.[0] // {}) else ((.results // [])[0] // {}) end)')
+# has() checks key presence; returns true even when value is null.
+# To also require non-null: extend the jq filter with `and (.expected_field_name != null)`
 if echo "$RECORD" | jq -e 'has("expected_field_name")' > /dev/null 2>&1; then
   echo "✅ Field key present"
 else
@@ -99,14 +100,14 @@ fi
 
 ```bash
 #!/usr/bin/env bash   # mktemp --suffix is GNU coreutils; BSD: mktemp /tmp/plvr.XXXXXX.zip
-set -euo pipefail
 PROBE_TMP=$(mktemp --suffix=.zip)
 trap 'rm -f "$PROBE_TMP"' EXIT
 
 curl -sf "https://plvr.land.moi.gov.tw/DownloadOpenData?type=zip&fileName=lvr_landcsv.zip" \
   -o "$PROBE_TMP"
-# Decode Big5/CP950; unzip-to-head pipe may emit SIGPIPE — redirect stderr to suppress
-HEADER=$(unzip -p "$PROBE_TMP" a_lvr_land_a.csv 2>/dev/null | head -1 | iconv -f cp950 -t utf-8)
+# unzip-to-head can cause SIGPIPE on unzip; avoid set -e here, use explicit checks instead
+HEADER=$(unzip -p "$PROBE_TMP" a_lvr_land_a.csv 2>/dev/null | head -1 | iconv -f cp950 -t utf-8) || {
+  echo "PROBE FAILED: could not extract or decode CSV header"; exit 1; }
 # Use if/then/else — avoids the A && B || C pitfall (C executes if B fails, not only if A fails)
 if echo "$HEADER" | tr ',' '\n' | tr -d '\r' | grep -qFx "公告現值"; then
   echo "✅ Field found"
@@ -115,7 +116,7 @@ else
 fi
 echo "Column count: $(echo "$HEADER" | tr ',' '\n' | wc -l)"
 # Sample a data row to check for column-count drift:
-SAMPLE=$(unzip -p "$PROBE_TMP" a_lvr_land_a.csv 2>/dev/null | sed -n '2p' | iconv -f cp950 -t utf-8)
+SAMPLE=$(unzip -p "$PROBE_TMP" a_lvr_land_a.csv 2>/dev/null | sed -n '2p' | iconv -f cp950 -t utf-8) || true
 echo "Data row column count: $(echo "$SAMPLE" | tr ',' '\n' | wc -l)"
 ```
 
