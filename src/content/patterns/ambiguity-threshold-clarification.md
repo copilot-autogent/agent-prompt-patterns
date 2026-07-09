@@ -49,7 +49,7 @@ Apply both criteria in parallel. If **any** ask-trigger fires, ask. Only infer w
 
 1. **Implementation choice, not scope choice**: The ambiguity determines *how* to achieve an agreed outcome, not *what* outcome to produce.
 2. **Conservative interpretation is safe and reversible**: The most cautious reading produces an artifact that can be corrected or extended without significant cost.
-3. **Resolves by domain default**: The ambiguity has a well-established default in the domain (e.g., "latest stable" for a dependency version, "append" for file write mode, "read-only" for an unspecified DB access pattern).
+3. **Resolves by domain default**: The ambiguity has a well-established default in the domain (e.g., "append" for an unspecified file write mode, "read-only" for an unspecified DB access pattern, RFC-recommended defaults for protocol behavior). Note: "latest stable" for dependency versions is **not** a safe default — it produces non-reproducible builds. Prefer an explicit pinned version or ask.
 
 ### Step 2 — When Asking: Ask Well
 
@@ -59,7 +59,8 @@ Never surface ambiguity as an open-ended question. Open-ended questions ("what d
 
 1. **Name the ambiguity explicitly**: State the two (or more) interpretations with the consequence of each.
 2. **Propose a specific default with a time window**: "I'll proceed with [default] unless you correct me within [N hours / by [time]]." This unblocks work on a timer and gives the operator a concrete position to accept or reject.
-3. **One question per ask**: Do not batch multiple clarifications into one message. Each ambiguity is an independent decision. Batching forces the operator to parse a compound question and increases the chance of a partial or ambiguous answer.
+   - **Exception — constraint-class ambiguities do not get a timeout default.** If the ask was triggered by a security boundary, destructive/irreversible action, external API contract, or schema change, the agent must block until the operator explicitly confirms. A timeout expiry must NOT authorize irreversible work; instead, re-ask or park the task as `status:needs-input`.
+3. **One question per ask**: Do not batch multiple clarifications into one message. Each ambiguity is an independent decision. Batching forces the operator to parse a compound question and increases the chance of a partial or ambiguous answer. *Exception: when two ambiguities are tightly coupled — resolving one constrains the other — surface both together, but label them clearly as related and accept an answer to either.*
 
 **Example:**
 
@@ -84,15 +85,20 @@ Inferences made silently create no feedback path. If the inference is wrong, the
 ```
 Ambiguous instruction received
           │
-          ├─ Does ambiguity affect ≥50% of scope?  ──YES──► Ask
+          ├─ Does ambiguity affect ≥50% of scope?  ──YES──► Ask (with default if non-constraint-class)
           │
-          ├─ Is it a constraint-class field?        ──YES──► Ask
+          ├─ Is it a constraint-class field?        ──YES──► Ask (NO timeout default; block until confirmed)
           │     (security, destructive, API, schema)
           │
-          ├─ No safe default / incompatible paths?  ──YES──► Ask
+          ├─ No safe default / incompatible paths?  ──YES──► Ask (with default)
           │
-          └─ All infer conditions met?              ──YES──► Infer + log
-                (impl detail, reversible, domain default)
+          ├─ All infer conditions met?              ──YES──► Infer + log
+          │     (impl detail, reversible, domain default)
+          │
+          └─ None of the above clearly applies?    ──────► Gather more context first:
+                                                             check prior commits, related patterns,
+                                                             domain docs, then re-apply the tree.
+                                                             If still unresolved → Ask.
 ```
 
 ## Evidence
