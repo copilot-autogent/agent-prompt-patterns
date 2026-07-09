@@ -3,7 +3,7 @@ title: "Hypothesis-Before-Action"
 category: "agent-autonomy"
 evidenceLevel: "moderate"
 summary: "Agents encountering unexpected behaviour often take multiple simultaneous fix actions without first forming an explicit model of why the failure occurs. This produces false fixes, confounded root causes, and abandoned hypotheses. Before any *intervention*, state an explicit, falsifiable hypothesis, execute only the minimum action to test it, and update the hypothesis before acting again. Observation (gathering evidence) is not an intervention and always precedes the hypothesis."
-relatedPatterns: ["empirical-validation-loop", "constraint-falsification", "tool-error-triage", "evidence-freshness-decay"]
+relatedPatterns: ["empirical-validation-loop", "constraint-falsification", "tool-error-triage", "evidence-freshness-decay", "max-retry-pivot"]
 tags: ["debugging", "hypothesis", "falsification", "root-cause", "diagnosis", "scientific-method", "one-variable-at-a-time", "tier:2-standard"]
 ---
 
@@ -105,3 +105,4 @@ The six steps fall into two phases: **evidence gathering** (OBSERVE is passive �
 - **Constraint Falsification** — applies the same falsification discipline to operational assumptions ("I assume X is true") rather than failure hypotheses. Complementary: Hypothesis-Before-Action for active failures; Constraint Falsification for latent assumptions.
 - **Tool Error Triage** — classifies the error type first before acting. Feeds the OBSERVE step of this pattern: a correctly classified error produces a better-formed hypothesis.
 - **Evidence Freshness Decay** — stale observations produce stale hypotheses. Before cycling back to HYPOTHESIZE, verify that the evidence from OBSERVE still reflects current system state, especially after any environmental change.
+- **[Max-Retry Pivot](/agent-prompt-patterns/patterns/max-retry-pivot)** — hypothesis-before-action is a prerequisite for max-retry-pivot: to count approach classes and detect same-class cycling, the agent must have articulated what it believes and why. Max-retry-pivot enforces the consequence of N same-class failures; hypothesis-before-action ensures each attempt has a distinct, testable hypothesis.
