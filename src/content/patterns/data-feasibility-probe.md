@@ -3,7 +3,7 @@ title: "Data Feasibility Probe"
 category: "task-design"
 evidenceLevel: "strong"
 summary: "Before filing a feature issue that depends on external data (government APIs, scraped datasets, third-party services), an agent runs a minimal feasibility probe to verify the data source is accessible and contains the expected fields. Issues filed without a probe frequently stall mid-sprint when the required data turns out to be missing, auth-gated, or structurally different from what was assumed. Probe first; gate sprint dispatch on the result."
-relatedPatterns: ["external-data-source-probe", "capability-preflight-gate", "hypothesis-before-action", "schema-validation-before-processing", "dedup-search-before-filing"]
+relatedPatterns: ["capability-preflight-gate", "hypothesis-before-action", "schema-validation-before-processing", "dedup-search-before-filing", "empirical-gate-before-persisting-diagnosis"]
 tags: ["data-integrity", "issue-triage", "external-dependencies", "autonomous-agents", "sprint-efficiency", "preflight", "feasibility", "gov-open-data", "task-design"]
 ---
 
@@ -44,7 +44,7 @@ The pattern is most critical for:
 - **Third-party API features** where the specific response field hasn't been seen in a live response
 - **Web-scraped data** where site structure can change between filing time and sprint time
 
-This pattern operates at the **process level** (when to probe, how to gate sprint dispatch, how to record results). For the technical details of how to run specific probe types (bash commands, encoding-aware CSV probing, API HEAD requests), see `external-data-source-probe`.
+This pattern operates at the **process level** (when to probe, how to gate sprint dispatch, how to record results) and includes technical examples for common probe types (JSON APIs, CP950-encoded CSVs, join-key compatibility checks).
 
 ## Solution
 
@@ -75,7 +75,44 @@ A probe answers three questions:
 
 For scraped sources, check `robots.txt` and the site's terms of service **before** making the probe request. The probe itself is an HTTP request to the target — if scraping is prohibited, the probe is the prohibited action. Confirm scraping is permitted, then probe.
 
-The probe does not need to be comprehensive — a single `curl` and a field check is often sufficient. See `external-data-source-probe` for specific probe scripts for JSON APIs, CSV bulk-downloads, and scraped content.
+The probe does not need to be comprehensive — a single `curl` and a field check is often sufficient. The examples below are illustrative starting points; adapt them to your platform.
+
+```bash
+# --- Probe a JSON API endpoint ---
+# -sf: -s silences progress, -f exits non-zero on 4xx/5xx
+curl -sf "https://api.example.gov/v1/data?limit=1" \
+  | jq 'if type=="array" then .[0] else .results[0] end | keys' \
+  || { echo "PROBE FAILED: endpoint unreachable or returned error status"; exit 1; }
+
+# --- Download a CSV zip and verify a column name is present ---
+#!/usr/bin/env bash
+set -o pipefail
+PROBE_TMP=$(mktemp --suffix=.zip)
+trap 'rm -f "$PROBE_TMP"' EXIT
+
+curl -sf "https://plvr.land.moi.gov.tw/DownloadOpenData?type=zip&fileName=lvr_landcsv.zip" \
+  -o "$PROBE_TMP"
+# Decode Big5/CP950 before text operations
+HEADER=$(unzip -p "$PROBE_TMP" a_lvr_land_a.csv | head -1 | iconv -f cp950 -t utf-8)
+echo "$HEADER" | tr ',' '\n' | tr -d '\r' | grep -Fx "公告現值" \
+  && echo "✅ Field found" \
+  || echo "❌ Field not found — check column name and encoding"
+echo "Column count: $(echo "$HEADER" | tr ',' '\n' | wc -l)"
+# Sample a data row to check for column-count drift:
+SAMPLE=$(unzip -p "$PROBE_TMP" a_lvr_land_a.csv | sed -n '2p' | iconv -f cp950 -t utf-8)
+echo "Data row column count: $(echo "$SAMPLE" | tr ',' '\n' | wc -l)"
+```
+
+> **Encoding note**: Taiwan PLVR bulk CSVs are CP950/Big5-encoded. A UTF-8 `grep` on raw bytes silently fails to match even when the field exists. Always decode with `iconv -f cp950 -t utf-8` before any string operation. NFKC normalization (for full-width digit fields like `４３號`) is a separate follow-on step applied *after* decoding — it is not an alternative to the decode step.
+
+```bash
+# NFKC-normalize full-width digits before column search (after CP950 decode)
+python3 -c "
+import unicodedata, sys
+line = sys.stdin.readline()
+print(unicodedata.normalize('NFKC', line))
+" < header_row.csv | grep "公告現值"
+```
 
 **Probe reliability notes:**
 - **Check HTTP status first**: a `curl`/`grep` on a string can false-positive against login pages, HTML error bodies, or error envelopes that mention the field name. Confirm the response is HTTP 2xx with the expected Content-Type before treating a string match as proof of presence.
@@ -156,7 +193,7 @@ Issue draft assembled
 
 **realestate-radar #106 (format shift detection)**: A government CSV added two extra fields mid-row without notice, breaking a 28-column parser. A probe that checked column count against the expected number AND matched fields by header name (not position) would have caught the format shift the moment the file was regenerated. Instead, the mismatch was discovered through broken downstream output after sprint completion.
 
-**Pattern cross-reference**: The same probe discipline appears in `external-data-source-probe` (technical probe execution), `hypothesis-before-action` (gating actions on untested hypotheses), and `capability-preflight-gate` (verifying required resources before sprint start). This pattern operationalizes the discipline specifically at the issue-filing step, where the cost of catching the problem is lowest.
+**Pattern cross-reference**: The same probe discipline appears in `hypothesis-before-action` (gating actions on untested hypotheses) and `capability-preflight-gate` (verifying required resources before sprint start). This pattern operationalizes the discipline specifically at the issue-filing step, where the cost of catching the problem is lowest.
 
 ## Success Metrics
 
@@ -167,6 +204,8 @@ Teams applying this pattern can track:
 - **Production 404s from data-source failures**: features that ship with CI green but produce empty/broken output due to a data source being unreachable or schema-mismatched. These should be caught by the probe gate, not production.
 
 ## Anti-patterns
+
+**The cascade assumption**: Feature A assumes data source X exists. Feature B assumes feature A works. Feature C assumes feature B works. None of the three issues contained a probe note. The entire cascade fails when feature A's data source turns out to use a different schema than assumed — but the failure is only discovered when feature C's sprint runs.
 
 **The optimistic stub**: Issue says "data probably available." Sprint creates a data-loading module with `TODO: verify field name` and marks itself complete. CI passes. The unresolved TODO lands in main. The feature never works.
 
