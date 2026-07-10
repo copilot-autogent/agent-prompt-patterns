@@ -2,7 +2,7 @@
 title: "Pre-Destruction State Revalidation"
 category: "agent-autonomy"
 evidenceLevel: "strong"
-summary: "Before executing any destructive action (killing an agent, closing an issue, reverting a PR, deleting a branch), re-fetch the current external state from the authoritative source rather than relying on the in-context observation that triggered the alarm. The in-context state is a snapshot — it can be stale by minutes or hours. Two confirmed incidents where agents killed valid sprints or prepared unnecessary recovery work because a timeout notification or cached label pre-dated an already-completed merge. Rule: read-then-act, not notify-then-act."
+summary: "Before executing any destructive action (killing an agent, closing an issue, reverting a PR, deleting a branch), re-fetch the current external state from the authoritative source rather than relying on the in-context observation that triggered the alarm. The in-context state is a snapshot — it can be stale by minutes or hours. Two confirmed incidents where agents killed valid sprints or prepared unnecessary recovery work because a timeout notification or cached label pre-dated an already-completed merge. Rule: read-then-act, not notify-then-act. This pattern specializes uncertainty-gated-irreversible-action by focusing specifically on the *freshness* dimension: even when the agent is subjectively certain about a state, that state must be re-verified from the live source before destruction."
 relatedPatterns: ["uncertainty-gated-irreversible-action", "observe-resolve-pairing", "dead-sprint-recovery", "verification-before-completion", "sprint-completion-verification"]
 tags: ["destructive-action", "state-revalidation", "stale-state", "read-before-destroy", "sprint-recovery", "agent-autonomy", "irreversible-action", "freshness-check"]
 ---
@@ -46,10 +46,10 @@ Choose the re-fetch tool based on the action type:
 
 | Destructive Action | Authoritative Source | Re-fetch Tool |
 |---|---|---|
-| Kill sprint / stop agent | GitHub: issue state + open PRs | `issue_read method=get` → check `state` and `labels`; `pull_request_read method=get` → check `merged` |
-| Close or reopen issue | GitHub: issue comments | `issue_read method=get_comments` → read most recent comments for un-hold or un-block signals |
+| Kill sprint / stop agent | GitHub: issue state + open PRs; scheduler: agent session status | `issue_read method=get` → check `state` and `labels`; `pull_request_read method=get` → check `merged`; also verify agent session status via `list_agents` to confirm the session is actually still active and has not already exited or completed handoff |
+| Close or reopen issue | GitHub: issue state, labels, and comments | `issue_read method=get` → check current `state` and `labels`; `issue_read method=get_comments` → read most recent comments for un-hold, un-block, or re-dispatch signals; use both — comments alone may miss a label change, and labels alone may miss a comment that explains why the label was set |
 | Revert or close PR | GitHub: PR merge status | `pull_request_read method=get` → confirm `merged: true`/`false` and review last commit timestamp |
-| Delete branch | GitHub: branch commit history | `list_commits` → check for new commits since last observation |
+| Delete branch | GitHub: branch references and open PRs | `list_commits` → check for new commits since last observation; `list_pull_requests` filtered to this branch as `head` → confirm no open PRs reference it; check whether the branch is the repo default or marked protected before proceeding |
 | Other destructive action | Depends on target | Re-fetch from the canonical source that owns that target's state |
 
 **Timing rule**: The re-fetch must happen *immediately before* the destructive action — not minutes earlier during the diagnostic phase. State can change between your diagnostic read and your action.
@@ -62,9 +62,9 @@ Ask: does the freshly-fetched state still justify the destructive action?
 
 **If NO — state has changed**: Abort the destructive action. Log the stale-state discrepancy explicitly: "Trigger: `❌ Timeout` notification. Fresh read: `pull_request_read` shows `merged: true` at 20:13Z. Aborting recovery — sprint already completed." Update the in-context model to reflect actual state.
 
-### Step 4 — One re-fetch is enough
+### Step 4 — One re-fetch is enough; escalate on genuine ambiguity
 
-Do not loop or poll. This is a point-in-time freshness check immediately before action, not a continuous monitor. A single fresh read is authoritative; if the state is still ambiguous after the re-fetch, escalate to a human rather than retrying.
+In most cases a single fresh read is sufficient. However, if the re-fetched state is itself ambiguous or incomplete (e.g., the issue is closed but an open PR for the same issue is still unmerged), a single targeted follow-up read is appropriate — but only to resolve that specific gap. Do not poll or loop. If the state remains genuinely ambiguous after two reads, do not proceed with the destructive action: escalate to a human, log the ambiguity, and park the task as `status:needs-input`. Allowing a destructive action under sustained ambiguity defeats the purpose of this pattern.
 
 ### Decision Checklist
 
@@ -73,13 +73,26 @@ Before any destructive action:
 ```
 [ ] Have I named the specific target (ID, number, path)?
 [ ] Have I chosen the correct authoritative source for this action type?
-[ ] Have I re-fetched state within the last ~60 seconds?
+[ ] Have I re-fetched state immediately before this action (not from an earlier diagnostic step)?
 [ ] Does the freshly-fetched state still justify the action?
      → YES: proceed (cite the fresh read)
      → NO: abort + log the stale-state discrepancy
+[ ] If the re-fetch result is ambiguous, have I done at most one targeted follow-up read?
+     → Still ambiguous after two reads: escalate to human; park as needs-input
 ```
 
-## Evidence
+## Relationship to uncertainty-gated-irreversible-action
+
+`uncertainty-gated-irreversible-action` gates destructive actions on the agent's *confidence level* about its current understanding. This pattern specializes that prescription along a different axis: **observation freshness**. The key distinction:
+
+- `uncertainty-gated-irreversible-action`: "Am I certain enough to proceed?" — fires when the agent's subjective uncertainty is high
+- `pre-destruction-state-revalidation`: "Is my observation current enough to proceed?" — fires unconditionally, even when the agent is subjectively certain
+
+An agent can be highly confident about a state that is nonetheless stale. A timeout notification is unambiguous — it says "this sprint failed" — but the conclusion it implies ("the sprint's work was not completed") can be wrong because the state changed after the notification was generated. High subjective confidence does not guarantee observation freshness.
+
+Apply both patterns together for destructive decisions: gate on certainty (`uncertainty-gated-irreversible-action`) AND re-fetch for freshness (this pattern). Neither subsumes the other.
+
+
 
 ### Realestate-radar #125 (2026-07-02): Sprint timeout after successful merge
 
