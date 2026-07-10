@@ -3,7 +3,7 @@ title: "Observe-Resolve Pairing"
 category: "task-design"
 evidenceLevel: "strong"
 summary: "Every observation task needs a paired resolver counterpart. Observers that detect issues but take no action create backlog generators — findings accumulate without being addressed. Pair each observer with a resolver that runs shortly after, or route all findings to a pipeline with auto-decide dates."
-relatedPatterns: ["observer-actor-separation", "dispatcher-pattern", "staggered-task-spawning", "deploy-lag-verification"]
+relatedPatterns: ["observer-actor-separation", "dispatcher-pattern", "staggered-task-spawning", "deploy-lag-verification", "pre-destruction-state-revalidation"]
 tags: ["task-design", "scheduling", "observe", "resolve", "pipeline", "automation", "recurring-tasks"]
 ---
 

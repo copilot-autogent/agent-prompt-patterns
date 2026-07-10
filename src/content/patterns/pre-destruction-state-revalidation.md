@@ -30,7 +30,7 @@ This pattern applies to any agent action that is irreversible or costly to undo:
 - **Branch delete**: Removes a git branch — destroys commit history not yet merged
 - **File delete or data purge**: Removes artifacts that may still be needed
 
-It does NOT apply to idempotent, reversible, or read-only operations.
+It does NOT apply to idempotent or read-only operations. For *partially reversible* operations (e.g., reopening a closed issue), the pattern is advisory rather than mandatory: the cost of an incorrect action is low enough that a re-fetch is good practice but not a hard gate. The table below marks these explicitly.
 
 ## Solution
 
@@ -46,11 +46,11 @@ Choose the re-fetch tool based on the action type:
 
 | Destructive Action | Authoritative Source | Re-fetch Tool |
 |---|---|---|
-| Kill sprint / stop agent | GitHub: issue state + open PRs; scheduler: agent session status | `issue_read method=get` → check `state` and `labels`; `pull_request_read method=get` → check `merged` for PRs linked to this issue (note: with stacked or follow-up PRs, a merged PR does not always mean all work is complete — verify the specific PR directly tracking the sprint's deliverable); also `list_agents` to confirm the session is still active and has not already exited or completed handoff |
-| Close issue | GitHub: issue state, labels, and comments | `issue_read method=get` → check current `state` and `labels`; `issue_read method=get_comments` → read most recent comments for un-hold, un-block, or re-dispatch signals; use both — comments alone may miss a label change, and labels alone may miss a comment that explains why the label was set. Note: label and timeline events not visible via comments can also signal holds — when in doubt, check labels explicitly |
-| Reopen issue | GitHub: issue comments and linked work | `issue_read method=get_comments` → confirm the hold/block condition still applies; note that reopening is a lower-stakes action (reversible) but may still trigger unintended re-dispatches, so validate the reason before proceeding |
+| Kill sprint / stop agent | GitHub: issue state, labels, comments, and open PRs; scheduler: agent session status | (1) `issue_read method=get` → check `state` and `labels`; (2) `issue_read method=get_comments` → read most recent comments for un-hold, un-block, or completion signals; (3) `list_pull_requests` on the repo filtered to `head` branch for this sprint → get PR numbers, then `pull_request_read method=get` for each — confirm none is `merged: true` (a merged PR confirms the sprint's deliverable shipped; with stacked PRs verify the specific tracking PR); (4) `list_agents` → confirm the session is still active |
+| Close issue | GitHub: issue state, labels, and comments | `issue_read method=get` → check current `state` and `labels`; `issue_read method=get_comments` → read most recent comments for un-hold, un-block, or re-dispatch signals; use both — comments alone may miss a label change, and labels alone may miss a comment explaining why |
+| Reopen issue *(partially reversible — advisory)* | GitHub: issue comments and labels | `issue_read method=get_comments` → confirm the hold/block condition still applies; note that reopening may trigger unintended re-dispatches, so validate the reason before proceeding |
 | Revert or close PR | GitHub: PR merge status | `pull_request_read method=get` → confirm `merged: true`/`false` and review last commit timestamp |
-| Delete branch | GitHub: branch references and open PRs | `list_pull_requests` filtered to this branch as `head` → confirm no open PRs reference it; check whether the branch is the repo default or marked protected before proceeding; to verify unique commits are merged (accounting for rebases/force-pushes where commit SHAs differ), use `get_commit` on the branch HEAD and confirm its content is present in the merge target rather than relying on ancestry by SHA alone |
+| Delete branch | GitHub: branch references and open PRs | `list_pull_requests` on the repo filtered to `head` branch → confirm no open PRs reference it; check whether the branch is the repo default or marked protected before proceeding; for rebased or force-pushed branches (where commit SHAs differ from the merge target), a SHA-based ancestry check is insufficient — compare the working tree content between branch tip and merge target to reduce the risk of destroying unique work, rather than relying on commit identity |
 | Other destructive action | Depends on target | Re-fetch from the canonical source that owns that target's state |
 
 **Timing rule**: The re-fetch must happen *immediately before* the destructive action — not minutes earlier during the diagnostic phase. State can change between your diagnostic read and your action.
@@ -63,9 +63,11 @@ Ask: does the freshly-fetched state still justify the destructive action?
 
 **If NO — state has changed**: Abort the destructive action. Log the stale-state discrepancy explicitly: "Trigger: `❌ Timeout` notification. Fresh read: `pull_request_read` shows `merged: true` at 20:13Z. Aborting recovery — sprint already completed." Update the in-context model to reflect actual state.
 
-### Step 4 — One re-fetch is enough; escalate on genuine ambiguity
+### Step 4 — Complete the re-fetch sequence before acting; escalate on genuine ambiguity
 
-In most cases a single fresh read is sufficient. However, if the re-fetched state is itself ambiguous or incomplete (e.g., the issue is closed but an open PR for the same issue is still unmerged), a single targeted follow-up read is appropriate — but only to resolve that specific gap. Do not poll or loop. If the state remains genuinely ambiguous after two reads, do not proceed with the destructive action: escalate to a human, log the ambiguity, and park the task as `status:needs-input`. Allowing a destructive action under sustained ambiguity defeats the purpose of this pattern.
+The re-fetch "sequence" for a given action may involve multiple queries (as shown in the table above — for example, killing a sprint requires reading issue state, issue comments, open PRs, and agent session status). All of these count as a single re-fetch sequence and should be completed before the action. They are not "extra reads for ambiguous cases" — they are the standard procedure for that action type.
+
+After the full sequence, if the state is still genuinely ambiguous (e.g., a PR is open but has no commits, or an issue is in a state inconsistent with its labels), a single targeted follow-up read is appropriate to resolve that gap. Do not poll or loop. If ambiguity persists after the follow-up, do not proceed with the destructive action: escalate to a human, log the ambiguity, and park the task as `status:needs-input`. Allowing a destructive action under sustained ambiguity defeats the purpose of this pattern.
 
 ### Decision Checklist
 
