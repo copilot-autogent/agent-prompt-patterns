@@ -3,7 +3,7 @@ title: "Sprint Completion Verification"
 category: "multi-agent"
 evidenceLevel: "strong"
 summary: "Sprint agents produce confident prose completion summaries, but these summaries describe intended or attempted state — not confirmed actual state. When a sprint exhausts its time budget after the final review round, it may post a summary describing a merge or close without having executed it. Verify artifact state via structured API queries before acknowledging completion; never rely on prose summaries or thread logs alone."
-relatedPatterns: ["side-effect-verification", "dead-sprint-recovery", "duplicate-agent-spawn-prevention", "workspace-per-sprint-isolation", "evidence-freshness-decay", "client-rendered-deploy-verification"]
+relatedPatterns: ["side-effect-verification", "dead-sprint-recovery", "duplicate-agent-spawn-prevention", "workspace-per-sprint-isolation", "evidence-freshness-decay", "client-rendered-deploy-verification", "pre-destruction-state-revalidation"]
 tags: ["multi-agent", "verification", "sprint", "completion", "pr-merge", "reliability", "state-verification", "overclaiming"]
 ---
 

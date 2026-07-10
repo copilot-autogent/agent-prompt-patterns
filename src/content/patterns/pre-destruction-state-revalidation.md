@@ -46,10 +46,11 @@ Choose the re-fetch tool based on the action type:
 
 | Destructive Action | Authoritative Source | Re-fetch Tool |
 |---|---|---|
-| Kill sprint / stop agent | GitHub: issue state + open PRs; scheduler: agent session status | `issue_read method=get` → check `state` and `labels`; `pull_request_read method=get` → check `merged`; also verify agent session status via `list_agents` to confirm the session is actually still active and has not already exited or completed handoff |
-| Close or reopen issue | GitHub: issue state, labels, and comments | `issue_read method=get` → check current `state` and `labels`; `issue_read method=get_comments` → read most recent comments for un-hold, un-block, or re-dispatch signals; use both — comments alone may miss a label change, and labels alone may miss a comment that explains why the label was set |
+| Kill sprint / stop agent | GitHub: issue state + open PRs; scheduler: agent session status | `issue_read method=get` → check `state` and `labels`; `pull_request_read method=get` → check `merged` for PRs linked to this issue (note: with stacked or follow-up PRs, a merged PR does not always mean all work is complete — verify the specific PR directly tracking the sprint's deliverable); also `list_agents` to confirm the session is still active and has not already exited or completed handoff |
+| Close issue | GitHub: issue state, labels, and comments | `issue_read method=get` → check current `state` and `labels`; `issue_read method=get_comments` → read most recent comments for un-hold, un-block, or re-dispatch signals; use both — comments alone may miss a label change, and labels alone may miss a comment that explains why the label was set. Note: label and timeline events not visible via comments can also signal holds — when in doubt, check labels explicitly |
+| Reopen issue | GitHub: issue comments and linked work | `issue_read method=get_comments` → confirm the hold/block condition still applies; note that reopening is a lower-stakes action (reversible) but may still trigger unintended re-dispatches, so validate the reason before proceeding |
 | Revert or close PR | GitHub: PR merge status | `pull_request_read method=get` → confirm `merged: true`/`false` and review last commit timestamp |
-| Delete branch | GitHub: branch references and open PRs | `list_commits` → check for new commits since last observation; `list_pull_requests` filtered to this branch as `head` → confirm no open PRs reference it; check whether the branch is the repo default or marked protected before proceeding |
+| Delete branch | GitHub: branch references and open PRs | `list_pull_requests` filtered to this branch as `head` → confirm no open PRs reference it; check whether the branch is the repo default or marked protected before proceeding; to verify unique commits are merged (accounting for rebases/force-pushes where commit SHAs differ), use `get_commit` on the branch HEAD and confirm its content is present in the merge target rather than relying on ancestry by SHA alone |
 | Other destructive action | Depends on target | Re-fetch from the canonical source that owns that target's state |
 
 **Timing rule**: The re-fetch must happen *immediately before* the destructive action — not minutes earlier during the diagnostic phase. State can change between your diagnostic read and your action.
@@ -92,9 +93,9 @@ An agent can be highly confident about a state that is nonetheless stale. A time
 
 Apply both patterns together for destructive decisions: gate on certainty (`uncertainty-gated-irreversible-action`) AND re-fetch for freshness (this pattern). Neither subsumes the other.
 
+**TOCTOU note**: A re-fetch read and the subsequent destructive action are not atomic. In theory, state can change between the read and the action (time-of-check to time-of-use). In practice, this window is negligible for non-adversarial agent workflows, and the benefit of eliminating minutes-stale observations far outweighs the residual sub-second race. For high-stakes actions where even this window matters, the correct response is to use a locking API or a conditional write (e.g., `update issue state where current_state = X`), not to avoid the re-fetch.
 
-
-### Realestate-radar #125 (2026-07-02): Sprint timeout after successful merge
+## Evidence
 
 Sprint task reported `❌ failed: Timeout` at 14,398 seconds. Recovery action was prepared. The triggering observation — the timeout notification — was accurate as a notification, but the *state it implied* was stale: `pull_request_read method=get` would have shown `merged: true` (PR #129 merged commit `8004f4c`, issue closed at 20:13Z). The failure was a post-merge bash cleanup process (`rm -rf /tmp/...`) running until the 4-hour cap — not a failed sprint.
 
