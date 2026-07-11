@@ -3,13 +3,13 @@ title: "Proactive Constraint Recall"
 category: "memory-management"
 evidenceLevel: "strong"
 summary: "In long-horizon tasks, agents systematically forget specific requirements stated early in the trajectory while still pursuing the high-level goal. Before each significant action, proactively surface constraints whose domain overlaps the action category — and assert the planned action satisfies them before proceeding."
-relatedPatterns: ["periodic-goal-alignment-checkpoint", "verification-before-completion", "pre-commit-planning-phase", "max-retry-pivot", "memory-read-before-write"]
+relatedPatterns: ["periodic-goal-alignment-checkpoint", "verification-before-completion", "pre-commit-planning-phase", "max-retry-pivot", "memory-read-before-write", "belief-entropy-checkpointing", "strategic-recall-before-ideation"]
 tags: ["constraints", "requirements", "long-horizon", "memory", "constraint-decay", "retry", "phased-tasks", "proactive-recall"]
 ---
 
 ## Problem
 
-In long-horizon agent tasks (30+ action steps), agents systematically forget **specific requirements and constraints** stated early in the trajectory — while still pursuing the high-level goal. The goal is remembered; the guardrails are not.
+In long-horizon agent tasks (20+ action steps), agents systematically forget **specific requirements and constraints** stated early in the trajectory — while still pursuing the high-level goal. The goal is remembered; the guardrails are not.
 
 The failure mode: step 2 specifies "must use bcrypt for password hashing." Step 47, while fixing an unrelated bug, the agent switches to MD5 because it's simpler. Nothing flagged the violation. The high-level goal (implement auth) is still being pursued; the specific constraint is silently discarded.
 
@@ -61,13 +61,15 @@ For each surfaced constraint: confirm the planned action satisfies it. If a conf
 ### Core prompt instruction
 
 ```
-Before each significant action, state:
+Before each significant action, internally verify (or explicitly state):
 1. What I'm about to do (action + scope)
 2. What constraints from earlier in this task apply here
 3. Whether the planned action satisfies all of them
 
 If any constraint is violated by the plan, resolve it first.
 ```
+
+> In user-facing or policy-constrained systems, the check may be an internal reasoning step rather than visible output — what matters is that the verification occurs before the action proceeds.
 
 ### Prior-failure query (retry variant)
 
@@ -77,7 +79,11 @@ Before retrying [operation]:
 - What did each fail with?
 - How does this attempt differ from the failed ones?
 
-If it's identical, don't retry — pivot the approach.
+If it's identical AND the prior failure was deterministic (logic error,
+wrong parameter, bad state) — don't retry, pivot the approach.
+If the prior failure was transient (rate limit, network timeout,
+eventually-consistent backend) — an identical retry with backoff/jitter
+is appropriate; note the transient nature explicitly.
 ```
 
 ### Worked examples
@@ -149,7 +155,7 @@ CONTEXT.md documents: *"Common: sprint identifies requirement early, violates it
 **Watch out for**:
 
 - **Constraint over-surfacing**: querying ALL prior constraints before every micro-action creates noise. Target significant actions (schema changes, file writes, API calls) not every reasoning step.
-- **Stale constraints**: a constraint from early in the task may have been explicitly superseded later. Surface constraints in chronological order; later constraints override earlier ones on the same topic.
+- **Stale constraints**: a constraint from early in the task may have been explicitly superseded later. When resolving conflicts between earlier and later constraints on the same topic, prefer the later one — *except* when the earlier constraint comes from a higher-authority source (system-level requirement, security policy, compliance rule). Recency overrides by default; authority overrides by exception.
 - **Constraint conflicts**: surfacing two conflicting constraints from different points in the trajectory requires a resolution step, not silent selection of one. Raise the conflict before acting.
 
 ## Related Patterns
@@ -159,3 +165,5 @@ CONTEXT.md documents: *"Common: sprint identifies requirement early, violates it
 - **[Pre-Commit Planning Phase](/agent-prompt-patterns/patterns/pre-commit-planning-phase)** — establishes the requirements this pattern resurfaces; together they close the loop
 - **[Max Retry Pivot](/agent-prompt-patterns/patterns/max-retry-pivot)** — what to do after retries exhaust; this pattern is upstream: check failure history *before* retrying to avoid retrying identically
 - **[Memory Read Before Write](/agent-prompt-patterns/patterns/memory-read-before-write)** — recall before modifying memory; same recall-first discipline applied to task constraints
+- **[Belief-Entropy Checkpointing](/agent-prompt-patterns/patterns/belief-entropy-checkpointing)** — complementary: checkpoints encode decision rationale at branch points; proactive constraint recall surfaces those constraints before each subsequent action
+- **[Strategic Recall Before Ideation](/agent-prompt-patterns/patterns/strategic-recall-before-ideation)** — recall before generating new plans; proactive constraint recall applies the same discipline before each action step within an execution
