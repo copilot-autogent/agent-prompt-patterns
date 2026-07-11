@@ -48,7 +48,7 @@ Before each **significant action step** (write, merge, API call, delete, schema 
 Label the current action: `data-write`, `dependency-add`, `auth-related`, `file-delete`, `schema-change`, etc.
 
 **Step 2 — Recall constraints relevant to that category**
-Query the task's initial requirements and earlier in the trajectory for any constraint whose domain overlaps the action category. Examples:
+Query the task's initial requirements and earlier in the trajectory for any constraint whose domain overlaps the action category. For efficiency on long-horizon tasks, maintain a running **constraint ledger** — a compact list of active constraints appended to as new ones are established — rather than rescanning the full trajectory. Query the ledger, not the raw history. Examples:
 - About to touch auth code → surface auth requirements from the task brief
 - About to delete a file → surface any "preserve X" or "don't modify Y" constraints
 - About to retry a command → query prior failure log for what was tried and why it failed
@@ -84,6 +84,10 @@ wrong parameter, bad state) — don't retry, pivot the approach.
 If the prior failure was transient (rate limit, network timeout,
 eventually-consistent backend) — an identical retry with backoff/jitter
 is appropriate; note the transient nature explicitly.
+Additionally, before retrying any write/mutating call after a transient
+failure: determine whether the operation is idempotent. A timed-out
+create or write may have partially succeeded; retrying it blindly can
+duplicate side effects. Verify or use an idempotency key before retrying.
 ```
 
 ### Worked examples
@@ -130,10 +134,12 @@ Step 40: exact same command retried. Fails again. Identical error each time.
 
 # With the pattern
 Step 35: About to retry [command].
-  Prior failures recalled: step 30 — same command, same error (timeout on /api/v2/data).
-  How does this attempt differ? It doesn't — same parameters.
-  Resolution: pivot approach — use cached data or call /api/v1/data instead.
-→ Identical retry blocked; new path explored immediately.
+  Prior failures recalled: step 30 — same command, same error
+  (404 Not Found: endpoint /api/v2/data does not exist in this environment).
+  Failure type: deterministic (wrong endpoint — not a transient error).
+  How does this attempt differ? It doesn't — same parameters, same endpoint.
+  Resolution: pivot approach — use /api/v1/data or the cached dataset instead.
+→ Identical deterministic retry blocked; new path explored immediately.
 ```
 
 ## Evidence
