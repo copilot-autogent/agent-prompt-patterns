@@ -45,10 +45,10 @@ The pattern is specifically about the window between `pre-commit-planning-phase`
 Before each **significant action step** (write, merge, API call, delete, schema change), proactively match "what I'm about to do" against "what constraints exist here":
 
 **Step 1 — Identify action category**
-Label the current action: `data-write`, `dependency-add`, `auth-related`, `file-delete`, `schema-change`, etc.
+Label the current action: `data-write`, `dependency-add`, `auth-related`, `file-delete`, `schema-change`, etc. These are illustrative — use broad semantic matching rather than strict equality. An action touching "authentication" overlaps `auth-related`, `security`, and `user-data` constraints regardless of the exact label used when the constraint was recorded.
 
 **Step 2 — Recall constraints relevant to that category**
-Query the task's initial requirements and earlier in the trajectory for any constraint whose domain overlaps the action category. For efficiency on long-horizon tasks, maintain a running **constraint ledger** — a compact list of active constraints appended to as new ones are established — rather than rescanning the full trajectory. Query the ledger, not the raw history. Examples:
+Query the task's initial requirements and earlier in the trajectory for any constraint whose domain overlaps the action category. For efficiency on long-horizon tasks, maintain a running **constraint ledger** — a compact list of active constraints appended to as new ones are established, with source and authority level noted — rather than rescanning the full trajectory. Query the ledger, not the raw history. Examples:
 - About to touch auth code → surface auth requirements from the task brief
 - About to delete a file → surface any "preserve X" or "don't modify Y" constraints
 - About to retry a command → query prior failure log for what was tried and why it failed
@@ -78,16 +78,23 @@ Before retrying [operation]:
 - What did previous attempts try?
 - What did each fail with?
 - How does this attempt differ from the failed ones?
+- Has the environment or state changed since the prior attempt?
 
 If it's identical AND the prior failure was deterministic (logic error,
-wrong parameter, bad state) — don't retry, pivot the approach.
+wrong parameter, bad state) AND nothing has changed in the environment
+since — don't retry, pivot the approach.
+If conditions have changed (different environment, deployment update,
+resolved dependency) a previously deterministic failure may now succeed;
+retry is appropriate but document what changed.
 If the prior failure was transient (rate limit, network timeout,
 eventually-consistent backend) — an identical retry with backoff/jitter
 is appropriate; note the transient nature explicitly.
 Additionally, before retrying any write/mutating call after a transient
 failure: determine whether the operation is idempotent. A timed-out
 create or write may have partially succeeded; retrying it blindly can
-duplicate side effects. Verify or use an idempotency key before retrying.
+duplicate side effects. When no idempotency key mechanism is available,
+probe the post-state first (check whether the resource was created)
+before deciding to retry.
 ```
 
 ### Worked examples
