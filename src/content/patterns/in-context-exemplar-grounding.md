@@ -3,7 +3,7 @@ title: "In-Context Exemplar Grounding"
 category: "prompt-structure"
 evidenceLevel: "strong"
 summary: "When a prompt specifies format-sensitive constraints (enum values, schema fields, output structure), include at least one concrete worked example inline rather than relying on prose description alone. Abstract 'valid values are A|B|C' instructions are followed inconsistently without a visible example — agents pattern-match on plausible-sounding alternatives. Show the valid form directly in context, adjacent to the constraint."
-relatedPatterns: ["structured-output-template", "schema-validation-before-processing", "pre-synthesis-self-critique", "ambiguity-threshold-clarification"]
+relatedPatterns: ["structured-output-template", "schema-validation-before-processing", "pre-synthesis-self-critique", "ambiguity-threshold-clarification", "enumeration-first-verification"]
 tags: ["format-compliance", "exemplar", "enum", "schema", "grounding", "prompt-structure", "build-safety", "in-context-learning"]
 ---
 
@@ -46,7 +46,7 @@ Set evidenceLevel to one of: strong, moderate, or emerging.
 
 # Use:
 Set evidenceLevel to one of the valid values:
-  evidenceLevel: strong   # also valid: moderate | emerging
+  evidenceLevel: "strong"   # also valid: "moderate" | "emerging"
 ```
 
 The key structural difference: the valid value appears in the exact form the agent must produce it, not in a comma-separated list after a colon. The inline comment enumerates the alternatives without making them syntactically equivalent to the example.
@@ -84,7 +84,7 @@ The multi-field example serves two grounding purposes simultaneously: it shows f
 1. **Always apply**: enum fields with non-obvious valid values
 2. **Always apply**: nested structures where field name alone is ambiguous
 3. **Always apply when prior failures observed**: any field class that has caused format errors before
-4. **Apply optionally**: output sections where "close but wrong" counts as a build failure
+4. **Always apply**: output sections where "close but wrong" counts as a build failure (frontmatter enums, API request bodies, CI config fields)
 
 ## Evidence
 
