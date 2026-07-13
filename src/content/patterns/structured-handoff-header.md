@@ -3,7 +3,7 @@ title: "Structured Handoff Header"
 category: "multi-agent"
 evidenceLevel: "moderate"
 summary: "Open every dispatched agent prompt with a compact YAML block encoding the full handoff context — intent, required context, success criteria, preconditions, explicit prohibitions, prior failed approaches, and memory update instructions. Free-text dispatch causes scope drift, silent failures, and unauthorized side-effects; a structured header makes the boundary explicit at the point of transfer."
-relatedPatterns: ["dispatcher-pattern", "sprint-continuity", "feedback-loop-via-memory", "parallel-tool-call-batching", "long-horizon-task-phasing"]
+relatedPatterns: ["dispatcher-pattern", "sprint-continuity", "feedback-loop-via-memory", "parallel-tool-call-batching", "long-horizon-task-phasing", "execution-budget-aware-dispatch"]
 tags: ["multi-agent", "handoff", "dispatch", "coordination", "spawn", "scope", "side-effects", "preconditions"]
 ---
 

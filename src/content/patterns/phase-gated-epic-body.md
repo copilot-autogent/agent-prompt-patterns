@@ -3,7 +3,7 @@ title: "Phase-Gated Epic Body Update"
 category: "prompt-structure"
 evidenceLevel: "strong"
 summary: "After completing each phase of a multi-phase epic, immediately update the issue body to mark the phase complete and redirect agents to the next phase — because the issue body is the agent's prompt, and stale phase instructions cause every subsequent dispatch to re-execute completed work."
-relatedPatterns: ["scope-boundary-declaration", "explicit-skip-permission", "dedup-search-before-filing", "long-horizon-task-phasing"]
+relatedPatterns: ["scope-boundary-declaration", "explicit-skip-permission", "dedup-search-before-filing", "long-horizon-task-phasing", "execution-budget-aware-dispatch"]
 tags: ["epics", "prompt-design", "multi-phase", "issue-body", "autonomous-agents", "re-audit-loop", "phase-gating", "task-intake"]
 ---
 
