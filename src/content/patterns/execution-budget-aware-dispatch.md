@@ -1,7 +1,7 @@
 ---
 title: "Execution Budget-Aware Dispatch"
 category: "multi-agent"
-evidenceLevel: "strong"
+evidenceLevel: "moderate"
 summary: "Sub-agents dispatched to a fixed execution budget (e.g., 4-hour task timeout) have no visibility into their remaining time. When discovery cost is high, the agent can exhaust the budget orienting — reading source structure, picking an approach — before writing a single line of code. The fix: estimate orientation cost before dispatch, embed an orientation hint for high-cost tasks, and split tasks that are clearly too large to fit in one execution window."
 relatedPatterns: ["long-horizon-task-phasing", "phase-gated-epic-body", "structured-handoff-header", "dead-sprint-recovery", "workspace-per-sprint-isolation"]
 tags: ["multi-agent", "dispatch", "execution-budget", "orientation", "timeout", "task-splitting", "sprint", "reliability", "planning"]
@@ -92,9 +92,9 @@ If a task requires both foundational work and surface work and the codebase is l
 ```
 Issue #N: [Full feature title]
 ├── #N-E1: [Core/engine component] — data model, core logic, unit tests
-│   Produces: merged PR with passing tests for core module
+│   Produces: merged PR (note the merge commit SHA for squash workflows, or the head SHA for merge commits)
 └── #N-E2: [UI/wiring component] — depends on #N-E1 artifact
-    Entry condition: E1 PR merged at SHA {sha}
+    Entry condition: E1 merged; check `git log --oneline main` for the merge commit SHA
     Produces: integrated feature, E2E tests, deployed to staging
 ```
 
@@ -125,7 +125,7 @@ The task body is the primary lever for shaping how the agent allocates its execu
 
 **Front-load enough context that the agent can start implementing within the first 10% of its budget.**
 
-For a wall-clock-based 4-hour budget, this means: by the ~24-minute mark, the agent should have branched, created the core file, and committed at least a scaffold. For token-based or other budget types, translate "10%" to the equivalent threshold for your environment. If it has not, something in the task body is causing over-orientation. The orientation hint is the tool to correct this.
+For a wall-clock-based 4-hour budget, this means: by the ~24-minute mark, the agent should have branched and pushed a working scaffold. Earlier guidance to "push a working branch within 30 min" is the same milestone from the agent's perspective — the early push creates a recoverable artifact and starts CI. For token-based or other budget types, translate "10%" to the equivalent threshold for your environment. If it has not, something in the task body is causing over-orientation. The orientation hint is the tool to correct this.
 
 ## Evidence
 
@@ -138,7 +138,7 @@ Key facts:
 - The second dispatch produced a merged PR after 34 minutes
 - The orientation hint imposed no constraints that prevented the agent from solving the full task — it reduced discovery waste, not capability
 
-**CONTEXT.md pattern (autogent, 2026-07-13):** The behavior was codified into the CONTEXT.md of the autogent repository (a separate multi-project agent orchestration system) as an operational rule: "A sprint that TIMED OUT once on orientation burn re-dispatches reliably if you bake an orientation hint into the ISSUE BODY... don't blind-retry — add the orientation hint to the body first. (Pairs with the split-if-still-timing-out fallback: E1 core/engine + E2 UI.)"
+**CONTEXT.md pattern (autogent, 2026-07-13):** The behavior was codified into the CONTEXT.md of the autogent project as an operational rule: "A sprint that TIMED OUT once on orientation burn re-dispatches reliably if you bake an orientation hint into the ISSUE BODY... don't blind-retry — add the orientation hint to the body first. (Pairs with the split-if-still-timing-out fallback: E1 core/engine + E2 UI.)"
 
 ## Tradeoffs
 
