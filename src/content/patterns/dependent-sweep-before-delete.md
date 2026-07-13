@@ -3,7 +3,7 @@ title: "Dependent Sweep Before Delete"
 category: "agent-autonomy"
 evidenceLevel: "strong"
 summary: "Before deleting or renaming any resource — a file, slug, module, API endpoint, or exported symbol — search the entire codebase for all references to that resource and update or remove every reference in the same operation. A deletion that leaves dangling references is incomplete: it will compile locally, pass unit tests, and only fail at build time or silently at runtime, often after a successful merge."
-relatedPatterns: ["pre-destruction-state-revalidation", "side-effect-verification", "schema-validation-before-processing", "sprint-completion-verification", "verification-before-completion"]
+relatedPatterns: ["pre-destruction-state-revalidation", "side-effect-verification", "schema-validation-before-processing", "sprint-completion-verification"]
 tags: ["destructive-action", "reference-integrity", "deletion", "rename", "dangling-reference", "build-failure", "agent-autonomy", "codebase-sweep"]
 ---
 
@@ -31,9 +31,10 @@ This pattern applies to any agent action that removes or renames a resource that
 - **Symbol rename** (a function, class, or exported constant gets a new name)
 - **Configuration entry removal** (removing a key from a shared config or enum)
 
+The pattern also applies in reverse: **when adding a new resource**, verify it is actually referenced by the entry points that need it. A module added but never imported into the application entry point produces dead code — all unit tests pass (they import the module directly), but the feature never renders. The sweep question changes from "what still references the old resource?" to "does anything reference the new resource where it must be wired in?"
+
 It does NOT apply to:
-- **Creating new resources** (no existing dependents yet — though the mirror pattern, ensuring new resources ARE referenced where needed, applies to that case)
-- **Idempotent or additive changes** (adding a new entry to a list has no dangling-reference risk)
+- **Idempotent or additive changes to list entries** (appending a new valid entry to a config list has no dangling-reference risk, as long as the new entry itself exists)
 
 The pattern is most critical in codebases with build-time validation: Astro content collections, Zod schemas, TypeScript strict mode with path aliases, and any config file with explicit "unknown key" guards. These codebases convert dangling references from silent runtime failures into hard build failures — which is better for reliability, but makes incomplete deletions immediately catastrophic.
 
@@ -53,22 +54,25 @@ Before making any change, list every identifier other code might use to reach th
 
 ### Step 2 — Run a broad codebase sweep for each identifier
 
-Use `grep -r` (or equivalent) across the entire repository — not just adjacent files, not just the directory being edited:
+Use `grep -r` (or equivalent) across the **entire repository** — not just `src/`, not just adjacent files. Include root-level configs, build scripts, CI workflow files, and package metadata:
 
 ```bash
-# Slug or filename stem
-grep -r "mcp-tool-poisoning" src/
+# Slug or filename stem — sweep all directories
+grep -r "mcp-tool-poisoning" .
 
-# Module import path
-grep -r "import.*moduleX" src/
-grep -r "from.*moduleX" src/
+# Module import/export/dynamic-import paths (multiple patterns needed)
+grep -r "moduleX" src/             # broad name match first
+grep -r "import.*moduleX" src/     # static import
+grep -r "from.*moduleX" src/       # re-export / named import
+grep -r "export.*from.*moduleX" src/  # barrel re-export
+grep -r "import(.*moduleX" src/    # dynamic import()
+grep -rP "require\(.*moduleX" src/ # CommonJS require
 
-# API path string
-grep -r "/api/v1/users" src/ public/ tests/
+# API path string — include client code, tests, and CI scripts
+grep -r "/api/v1/users" src/ tests/ .github/
 
-# Config entry or enum value
-grep -r "mcp-tool-poisoning" src/data/
-grep -r "mcp-tool-poisoning" src/content/
+# Config entry or enum value — sweep data, content, and CI
+grep -r "mcp-tool-poisoning" src/data/ src/content/ .github/
 ```
 
 Cast the net wider than feels necessary. A slug referenced in a learning-path config file lives two directories away from the content file — it will not be found by a directory-scoped search.
@@ -105,9 +109,9 @@ After merging, confirm the actual build job succeeded — not just `verify_deplo
 `verify_deploy` (HTTP GET on the base URL) returns 200 on the **stale last-good build** even when the new build failed. The site appears live. The deletion appears verified. The breakage is invisible until someone notices the site hasn't updated in hours.
 
 Instead:
-1. Pull the Actions run for the merge SHA.
+1. Pull the Actions run for the **deployed commit SHA** (for squash merges, this is the squash commit SHA; for rebase merges, the tip of the rebased branch; for merge commits, the merge commit SHA).
 2. Confirm the **build job** concluded `success` (not just that the API responded 200).
-3. Confirm the new content or change is visible in the live site (a specific new URL, a new content marker, or a timestamp-based check).
+3. Confirm the new content or change is visible in the live site — fetch a specific new URL, check a content marker present only in the new build, or verify the page timestamp advanced past the merge time.
 
 ### Decision Checklist
 

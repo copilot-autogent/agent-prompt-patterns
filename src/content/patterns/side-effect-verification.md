@@ -3,7 +3,7 @@ title: "Side-Effect Verification"
 category: "task-design"
 evidenceLevel: "strong"
 summary: "Tools that produce external side effects — file sends, notifications, commits, API calls — can fail silently by returning an error string rather than throwing. Agents trust return values and log success while the intended effect never happened. Explicitly verify the observable outcome for any operation where ‘it worked’ means something changed in the world, not just a string was returned."
-relatedPatterns: ["pre-commit-planning-phase", "observer-actor-separation", "sprint-continuity", "workspace-per-sprint-isolation", "sprint-completion-verification", "deploy-lag-verification", "client-rendered-deploy-verification"]
+relatedPatterns: ["pre-commit-planning-phase", "observer-actor-separation", "sprint-continuity", "workspace-per-sprint-isolation", "sprint-completion-verification", "deploy-lag-verification", "client-rendered-deploy-verification", "dependent-sweep-before-delete"]
 tags: ["reliability", "verification", "silent-failure", "side-effects", "tools", "error-handling", "debugging"]
 ---
 
