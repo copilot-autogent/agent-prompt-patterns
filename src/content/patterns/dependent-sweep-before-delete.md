@@ -3,7 +3,7 @@ title: "Dependent Sweep Before Delete"
 category: "agent-autonomy"
 evidenceLevel: "strong"
 summary: "Before deleting or renaming any resource — a file, slug, module, API endpoint, or exported symbol — search the entire codebase for all references to that resource and update or remove every reference in the same operation. A deletion that leaves dangling references is incomplete: it will compile locally, pass unit tests, and only fail at build time or silently at runtime, often after a successful merge."
-relatedPatterns: ["pre-destruction-state-revalidation", "side-effect-verification", "schema-validation-before-processing", "sprint-completion-verification"]
+relatedPatterns: ["pre-destruction-state-revalidation", "side-effect-verification", "schema-validation-before-processing", "sprint-completion-verification", "deploy-lag-verification", "client-rendered-deploy-verification"]
 tags: ["destructive-action", "reference-integrity", "deletion", "rename", "dangling-reference", "build-failure", "agent-autonomy", "codebase-sweep"]
 ---
 
@@ -53,11 +53,11 @@ Before making any change, list every identifier other code might use to reach th
 
 ### Step 2 — Run a broad codebase sweep for each identifier
 
-Use `git grep` (which searches only tracked source files, excluding generated output, vendored files, and `.git` history) instead of bare `grep -r`:
+Use `git grep` (which searches only tracked files, skipping `.git` internals and `.gitignore`d output directories) instead of bare `grep -r`. Note that `git grep` does **not** exclude tracked vendored or generated files — if your repository checks in `node_modules/`, `dist/`, or similar directories, also exclude them explicitly:
 
 ```bash
-# Slug or filename stem — search all tracked files
-git grep "mcp-tool-poisoning"
+# Slug or filename stem — search tracked files, excluding common generated dirs
+git grep "mcp-tool-poisoning" -- ':!dist/' ':!node_modules/'
 
 # Module import/export/dynamic-import paths (multiple patterns needed)
 git grep "moduleX"               # broad name match first
@@ -74,7 +74,13 @@ git grep "/api/v1/users"
 git grep "mcp-tool-poisoning"    -- src/data/ src/content/
 ```
 
-`git grep` is faster on large repositories and automatically excludes untracked files, `.gitignore`d output directories, and `.git` internals that would generate false positives with bare `grep -r`.
+For the **reverse/addition case** or **partially staged changes**, also check untracked working-tree files that `git grep` skips:
+
+```bash
+# Check untracked files alongside tracked ones
+git grep "moduleX" && grep -r "moduleX" --include="*.ts" --include="*.js" \
+  $(git ls-files --others --exclude-standard)
+```
 
 Cast the net wider than feels necessary. A slug referenced in a learning-path config file lives two directories away from the content file — it will not be found by a directory-scoped search.
 
@@ -110,7 +116,7 @@ After merging, confirm the actual build job succeeded — not just `verify_deplo
 `verify_deploy` (HTTP GET on the base URL) returns 200 on the **stale last-good build** even when the new build failed. The site appears live. The deletion appears verified. The breakage is invisible until someone notices the site hasn't updated in hours.
 
 Instead:
-1. Note the **merged/squash commit SHA** at the time of merge (available from the merge API response or `git log origin/main -1`). Do not rely on a "deployed commit SHA" — if the build failed, no new deployment exists to key off.
+1. Note the **merged/squash commit SHA** at the time of merge — use the SHA returned by the merge API response, or `git fetch origin && git log origin/main -1 --format=%H` (fetch first; on a stale clone, `git log origin/main -1` can return an older commit and cause you to validate the wrong build). Do not rely on a "deployed commit SHA" — if the build failed, no new deployment exists to key off.
 2. Pull the Actions runs for that commit SHA and confirm the **build job** concluded `success` (not just that the API responded 200).
 3. Confirm the new content or change is visible in the live site — fetch a specific new URL, check a content marker present only in the new build, or verify the page timestamp advanced past the merge time.
 
@@ -139,7 +145,7 @@ The Astro build has explicit throw-guards on unknown slugs: `throw new Error('Le
 
 **The fix**: Hotfix commit `94d6eae` removed the dead slug reference from `learning-paths.ts`. Build succeeded. Site updated.
 
-**What a dependent sweep would have shown**: `grep -r "mcp-tool-poisoning" src/data/` → `src/data/learning-paths.ts:  slug: "mcp-tool-poisoning"` → one hit, requires update, already identified before the deletion was committed.
+**What a dependent sweep would have shown**: `git grep "mcp-tool-poisoning"` → `src/data/learning-paths.ts:  slug: "mcp-tool-poisoning"` → one hit, requires update, already identified before the deletion was committed.
 
 ### factor-dashboard dead-module pattern
 
@@ -158,3 +164,5 @@ This is the mirror failure: not "deleted resource left in a reference" but "new 
 **`schema-validation-before-processing`**: Validates that input data conforms to an expected schema before operating on it. Related in spirit (validating consistency before acting), but scoped to input data rather than to the resource graph of the codebase being modified.
 
 **`sprint-completion-verification`**: Verifies that a sprint's deploy concluded successfully by checking the build job conclusion rather than just the HTTP status. Directly addresses the "verify_deploy returns 200 on stale build" failure mode described in the evidence above. This pattern should be applied as the final step of any deletion/rename PR.
+
+**`deploy-lag-verification`** and **`client-rendered-deploy-verification`**: Both address the HTTP-200 false-positive failure mode in detail — `deploy-lag-verification` covers the timing lag between merge and propagation; `client-rendered-deploy-verification` covers SPAs and client-rendered sites where static HTML markers pass while client-side hydration silently fails. Both should be applied alongside Step 5 of this pattern.
