@@ -80,7 +80,7 @@ Add a short **Sprint orientation hint** section directly to the task body — no
 - **Named entry points**: specify which files or directories to read first — not "read the codebase" but "read `src/engine/` and `src/types.ts`"
 - **Explicit time cap on orientation**: "5-min orientation cap, then start implementing" — this is the behavioral constraint that prevents open-ended discovery
 - **Implementation order**: core module before surface code, so if the budget is exhausted, at least the core artifact is committed
-- **Early milestone**: "push a working branch within 30 min" — gives CI time to run in parallel and creates a recoverable artifact early
+- **Early milestone**: "push a working branch within 30 min" — gives CI time to run in parallel and creates a recoverable artifact early (omit or adjust this step if the environment has no CI-on-push or branch-push is gated)
 - **Sequencing rationale**: "wire UI only after core tests are green" — prevents the agent from attempting to implement and test everything simultaneously
 
 ### 3. Split tasks that are clearly too large for one execution window
@@ -110,9 +110,9 @@ Each sub-task:
 
 When a dispatch times out with no committed artifacts, diagnose the failure mode before re-dispatching:
 
-| Observed pattern | Likely cause | Action |
+| Observed pattern | Most likely cause | Action |
 |---|---|---|
-| No commits on expected branch | Orientation burn (agent never started implementing) | Add orientation hint to task body, re-dispatch |
+| No commits on expected branch | Orientation burn (agent never started implementing) — also check for auth/push failures or environment setup crashes | Add orientation hint to task body, verify environment, re-dispatch |
 | Commits present, implementation incomplete | Scope too large for one window | Split remaining work, re-dispatch E2 starting from last committed state |
 | Commits present, blocked on external dependency | Blocker encountered mid-flight | Remove blocker, update task body with what's complete, re-dispatch |
 | Repeated timeout across two dispatches | Task is structurally too large | Split before third dispatch |
@@ -125,7 +125,7 @@ The task body is the primary lever for shaping how the agent allocates its execu
 
 **Front-load enough context that the agent can start implementing within the first 10% of its budget.**
 
-For a 4-hour budget, this means: by the 24-minute mark, the agent should have branched, created the core file, and committed at least a scaffold. If it has not, something in the task body is causing over-orientation. The orientation hint is the tool to correct this.
+For a wall-clock-based 4-hour budget, this means: by the ~24-minute mark, the agent should have branched, created the core file, and committed at least a scaffold. For token-based or other budget types, translate "10%" to the equivalent threshold for your environment. If it has not, something in the task body is causing over-orientation. The orientation hint is the tool to correct this.
 
 ## Evidence
 
@@ -138,7 +138,7 @@ Key facts:
 - The second dispatch produced a merged PR after 34 minutes
 - The orientation hint imposed no constraints that prevented the agent from solving the full task — it reduced discovery waste, not capability
 
-**CONTEXT.md pattern (autogent, 2026-07-13):** The behavior was codified into the autogent CONTEXT.md as an operational rule: "A sprint that TIMED OUT once on orientation burn re-dispatches reliably if you bake an orientation hint into the ISSUE BODY... don't blind-retry — add the orientation hint to the body first. (Pairs with the split-if-still-timing-out fallback: E1 core/engine + E2 UI.)"
+**CONTEXT.md pattern (autogent, 2026-07-13):** The behavior was codified into the CONTEXT.md of the autogent repository (a separate multi-project agent orchestration system) as an operational rule: "A sprint that TIMED OUT once on orientation burn re-dispatches reliably if you bake an orientation hint into the ISSUE BODY... don't blind-retry — add the orientation hint to the body first. (Pairs with the split-if-still-timing-out fallback: E1 core/engine + E2 UI.)"
 
 ## Tradeoffs
 
