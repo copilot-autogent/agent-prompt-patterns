@@ -71,7 +71,7 @@ Add a short **Sprint orientation hint** section directly to the task body — no
 1. Read `src/<top-level-structure>` first (5-min cap — stop reading and start implementing)
 2. Implement the core function / module in isolation before any UI or wiring
 3. Write a unit test for the core module immediately after it passes
-4. Push a working branch within 30 min so CI runs in parallel with further work
+4. Push a working branch with an initial commit within 30 min to create a recoverable artifact and give CI time to run in parallel
 5. Wire UI / surface code only after core + tests are green
 ```
 
@@ -92,9 +92,10 @@ If a task requires both foundational work and surface work and the codebase is l
 ```
 Issue #N: [Full feature title]
 ├── #N-E1: [Core/engine component] — data model, core logic, unit tests
-│   Produces: merged PR (note the merge commit SHA for squash workflows, or the head SHA for merge commits)
+│   Produces: merged PR (in squash workflows the merge commit on main is the canonical artifact;
+│             in merge-commit workflows use the merge commit SHA — not the feature branch head)
 └── #N-E2: [UI/wiring component] — depends on #N-E1 artifact
-    Entry condition: E1 merged; check `git log --oneline main` for the merge commit SHA
+    Entry condition: E1 merged — verify with `git fetch origin && git log --oneline origin/main | head -5`
     Produces: integrated feature, E2E tests, deployed to staging
 ```
 
@@ -125,7 +126,7 @@ The task body is the primary lever for shaping how the agent allocates its execu
 
 **Front-load enough context that the agent can start implementing within the first 10% of its budget.**
 
-For a wall-clock-based 4-hour budget, this means: by the ~24-minute mark, the agent should have branched and pushed a working scaffold. Earlier guidance to "push a working branch within 30 min" is the same milestone from the agent's perspective — the early push creates a recoverable artifact and starts CI. For token-based or other budget types, translate "10%" to the equivalent threshold for your environment. If it has not, something in the task body is causing over-orientation. The orientation hint is the tool to correct this.
+For a wall-clock-based 4-hour budget, this means: by the ~24-minute mark, the agent should have branched and pushed a working scaffold — the same milestone as "push a working branch with an initial commit within 30 min" stated in the hint template. For token-based or other budget types, translate "10%" to the equivalent threshold for your environment. If the agent has not branched by this point, something in the task body is likely causing over-orientation. The orientation hint is the tool to correct this.
 
 ## Evidence
 
@@ -142,7 +143,7 @@ Key facts:
 
 ## Tradeoffs
 
-**Benefit**: Near-100% completion rate for tasks that previously timed out. The orientation hint has essentially zero cost — 5 bullet points added to the task body. The first dispatch is more expensive to plan (the dispatcher must know enough to write the hint), but this front-loads cost that the agent would have paid anyway — less efficiently — during execution.
+**Benefit**: The orientation hint has essentially zero cost — 5 bullet points added to the task body — yet the single documented incident showed a 4-hour timeout converting to a 34-minute success. The first dispatch is more expensive to plan (the dispatcher must know enough to write the hint), but this front-loads cost that the agent would have paid anyway — less efficiently — during execution.
 
 **Cost**: Writing an orientation hint requires the dispatcher to know enough about the codebase to name the right entry points. If the dispatcher doesn't know, they must orient first. This shifts orientation cost from agent-time to dispatcher-time — which is more efficient when the dispatcher can cache that knowledge across multiple dispatches, and roughly cost-neutral for one-off tasks.
 
