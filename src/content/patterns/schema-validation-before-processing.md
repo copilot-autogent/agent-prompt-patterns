@@ -3,7 +3,7 @@ title: "Schema Validation Before Processing"
 category: "task-design"
 evidenceLevel: "moderate"
 summary: "External data pipelines break silently when providers change column layouts or remove fields; assert schema at ingestion, normalize encoding on affected fields first, and throw a structured error on any mismatch."
-relatedPatterns: ["input-trust-classification", "empirical-validation-loop", "large-tool-output-guard", "negative-test-coverage", "data-feasibility-probe"]
+relatedPatterns: ["input-trust-classification", "empirical-validation-loop", "large-tool-output-guard", "negative-test-coverage", "data-feasibility-probe", "dependent-sweep-before-delete"]
 tags: ["data-pipeline", "validation", "schema", "defensive", "external-data", "encoding", "error-handling"]
 ---
 

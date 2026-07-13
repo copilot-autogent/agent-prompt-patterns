@@ -3,7 +3,7 @@ title: "Deploy-Lag Verification"
 category: "feedback-loops"
 evidenceLevel: "strong"
 summary: "After merging a fix, verify two facts before declaring it live: the artifact was rebuilt from the patched commit, and the process restarted after that build. Neither alone is sufficient."
-relatedPatterns: ["side-effect-verification", "empirical-validation-loop", "observe-resolve-pairing", "sprint-continuity", "client-rendered-deploy-verification"]
+relatedPatterns: ["side-effect-verification", "empirical-validation-loop", "observe-resolve-pairing", "sprint-continuity", "client-rendered-deploy-verification", "dependent-sweep-before-delete"]
 tags: ["reliability", "verification", "deployment", "debugging", "incident-response", "false-green", "merge-vs-deploy"]
 ---
 

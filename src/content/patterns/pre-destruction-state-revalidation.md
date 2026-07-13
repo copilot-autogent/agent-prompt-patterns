@@ -3,7 +3,7 @@ title: "Pre-Destruction State Revalidation"
 category: "agent-autonomy"
 evidenceLevel: "strong"
 summary: "Before executing any destructive action (killing an agent, closing an issue, reverting a PR, deleting a branch), re-fetch the current external state from the authoritative source rather than relying on the in-context observation that triggered the alarm. The in-context state is a snapshot — it can be stale by minutes or hours. Two confirmed incidents where agents killed valid sprints or prepared unnecessary recovery work because a timeout notification or cached label pre-dated an already-completed merge. Rule: read-then-act, not notify-then-act. This pattern specializes uncertainty-gated-irreversible-action by focusing specifically on the *freshness* dimension: even when the agent is subjectively certain about a state, that state must be re-verified from the live source before destruction."
-relatedPatterns: ["uncertainty-gated-irreversible-action", "observe-resolve-pairing", "dead-sprint-recovery", "verification-before-completion", "sprint-completion-verification"]
+relatedPatterns: ["uncertainty-gated-irreversible-action", "observe-resolve-pairing", "dead-sprint-recovery", "verification-before-completion", "sprint-completion-verification", "dependent-sweep-before-delete"]
 tags: ["destructive-action", "state-revalidation", "stale-state", "read-before-destroy", "sprint-recovery", "agent-autonomy", "irreversible-action", "freshness-check"]
 ---
 
