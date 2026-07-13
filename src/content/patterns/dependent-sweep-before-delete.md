@@ -31,10 +31,9 @@ This pattern applies to any agent action that removes or renames a resource that
 - **Symbol rename** (a function, class, or exported constant gets a new name)
 - **Configuration entry removal** (removing a key from a shared config or enum)
 
-The pattern also applies in reverse: **when adding a new resource**, verify it is actually referenced by the entry points that need it. A module added but never imported into the application entry point produces dead code — all unit tests pass (they import the module directly), but the feature never renders. The sweep question changes from "what still references the old resource?" to "does anything reference the new resource where it must be wired in?"
+The pattern also applies in reverse: **when adding a new resource**, verify it is actually referenced by the entry points that need it. A module added but never imported into the application entry point produces dead code — all unit tests pass (they import the module directly), but the feature never renders. Similarly, adding a new entry to a curated config list (a learning path, a nav tree, a routing table) that references a slug requires that slug to actually exist — the sweep question becomes "does the new entry point to a valid resource?"
 
-It does NOT apply to:
-- **Idempotent or additive changes to list entries** (appending a new valid entry to a config list has no dangling-reference risk, as long as the new entry itself exists)
+There is no meaningful "does not apply" carve-out. Any time a reference relationship exists between two parts of the system, a change to either end requires verifying the other.
 
 The pattern is most critical in codebases with build-time validation: Astro content collections, Zod schemas, TypeScript strict mode with path aliases, and any config file with explicit "unknown key" guards. These codebases convert dangling references from silent runtime failures into hard build failures — which is better for reliability, but makes incomplete deletions immediately catastrophic.
 
@@ -54,26 +53,28 @@ Before making any change, list every identifier other code might use to reach th
 
 ### Step 2 — Run a broad codebase sweep for each identifier
 
-Use `grep -r` (or equivalent) across the **entire repository** — not just `src/`, not just adjacent files. Include root-level configs, build scripts, CI workflow files, and package metadata:
+Use `git grep` (which searches only tracked source files, excluding generated output, vendored files, and `.git` history) instead of bare `grep -r`:
 
 ```bash
-# Slug or filename stem — sweep all directories
-grep -r "mcp-tool-poisoning" .
+# Slug or filename stem — search all tracked files
+git grep "mcp-tool-poisoning"
 
 # Module import/export/dynamic-import paths (multiple patterns needed)
-grep -r "moduleX" src/             # broad name match first
-grep -r "import.*moduleX" src/     # static import
-grep -r "from.*moduleX" src/       # re-export / named import
-grep -r "export.*from.*moduleX" src/  # barrel re-export
-grep -r "import(.*moduleX" src/    # dynamic import()
-grep -rP "require\(.*moduleX" src/ # CommonJS require
+git grep "moduleX"               # broad name match first
+git grep "import.*moduleX"       # static import
+git grep "from.*moduleX"         # re-export / named import
+git grep "export.*from.*moduleX" # barrel re-export
+git grep "import(.*moduleX"      # dynamic import()
+git grep "require(.*moduleX"     # CommonJS require
 
-# API path string — include client code, tests, and CI scripts
-grep -r "/api/v1/users" src/ tests/ .github/
+# API path string
+git grep "/api/v1/users"
 
-# Config entry or enum value — sweep data, content, and CI
-grep -r "mcp-tool-poisoning" src/data/ src/content/ .github/
+# Config entry or enum value
+git grep "mcp-tool-poisoning"    -- src/data/ src/content/
 ```
+
+`git grep` is faster on large repositories and automatically excludes untracked files, `.gitignore`d output directories, and `.git` internals that would generate false positives with bare `grep -r`.
 
 Cast the net wider than feels necessary. A slug referenced in a learning-path config file lives two directories away from the content file — it will not be found by a directory-scoped search.
 
@@ -109,8 +110,8 @@ After merging, confirm the actual build job succeeded — not just `verify_deplo
 `verify_deploy` (HTTP GET on the base URL) returns 200 on the **stale last-good build** even when the new build failed. The site appears live. The deletion appears verified. The breakage is invisible until someone notices the site hasn't updated in hours.
 
 Instead:
-1. Pull the Actions run for the **deployed commit SHA** (for squash merges, this is the squash commit SHA; for rebase merges, the tip of the rebased branch; for merge commits, the merge commit SHA).
-2. Confirm the **build job** concluded `success` (not just that the API responded 200).
+1. Note the **merged/squash commit SHA** at the time of merge (available from the merge API response or `git log origin/main -1`). Do not rely on a "deployed commit SHA" — if the build failed, no new deployment exists to key off.
+2. Pull the Actions runs for that commit SHA and confirm the **build job** concluded `success` (not just that the API responded 200).
 3. Confirm the new content or change is visible in the live site — fetch a specific new URL, check a content marker present only in the new build, or verify the page timestamp advanced past the merge time.
 
 ### Decision Checklist
