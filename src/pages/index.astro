@@ -184,8 +184,8 @@ const leaderboard = allPatterns
       }, { signal });
     });
 
-    searchInput?.addEventListener('input', () => {
-      activeSearch = searchInput.value;
+    searchInput?.addEventListener('input', (e) => {
+      activeSearch = (e.currentTarget as HTMLInputElement).value;
       applyFilter(activeCat, activeTag);
     }, { signal });
 
