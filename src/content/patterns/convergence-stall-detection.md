@@ -3,7 +3,7 @@ title: "Convergence Stall Detection"
 category: "agent-autonomy"
 evidenceLevel: "emerging"
 summary: "Agents can loop without making measurable forward progress — re-reading the same files, re-running the same failing test, or repeatedly attempting the same fix strategy. Maintain a lightweight progress ledger and abort or pivot when N consecutive steps leave state unchanged."
-relatedPatterns: ["circuit-breaker", "empirical-validation-loop", "constraint-falsification", "max-retry-pivot"]
+relatedPatterns: ["circuit-breaker", "empirical-validation-loop", "constraint-falsification", "max-retry-pivot", "mid-task-scope-pivot"]
 tags: ["autonomy", "error-recovery", "loop-detection", "stall", "progress", "pivot", "escalation"]
 ---
 

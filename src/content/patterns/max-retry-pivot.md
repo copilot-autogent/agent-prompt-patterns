@@ -3,7 +3,7 @@ title: "Max-Retry Pivot"
 category: "agent-autonomy"
 evidenceLevel: "strong"
 summary: "A single agent retrying the same failed approach wastes budget without making progress. After N failed attempts with the same approach class (default: 2), the agent must stop, explicitly articulate what is different about the next strategy, and either pivot or escalate — never silently attempt N+1 with identical logic."
-relatedPatterns: ["convergence-stall-detection", "constraint-falsification", "hypothesis-before-action", "operator-blocked-escalation-ladder", "rate-limit-back-off"]
+relatedPatterns: ["convergence-stall-detection", "constraint-falsification", "hypothesis-before-action", "operator-blocked-escalation-ladder", "rate-limit-back-off", "mid-task-scope-pivot"]
 tags: ["autonomy", "error-recovery", "retry", "pivot", "escalation", "strategy-switching", "loop-prevention", "debugging"]
 ---
 
