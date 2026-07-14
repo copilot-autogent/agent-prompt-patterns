@@ -3,7 +3,7 @@ title: "Belief-Entropy Checkpointing"
 category: "feedback-loops"
 evidenceLevel: "emerging"
 summary: "Agents that save memory only at session end capture final state but lose decision rationale at earlier branch points. Successful agent trajectories show decreasing uncertainty about task state over time; failed ones show stagnant or increasing entropy. The pattern: checkpoint at high-uncertainty junctures — branch points, reversals, and unexpected outcomes — not only at session end."
-relatedPatterns: ["structured-handoff-header", "strategic-recall-before-ideation", "memory-read-before-write", "long-horizon-task-phasing"]
+relatedPatterns: ["structured-handoff-header", "strategic-recall-before-ideation", "memory-read-before-write", "long-horizon-task-phasing", "incremental-result-checkpointing"]
 tags: ["memory", "checkpointing", "uncertainty", "decision-rationale", "session-state", "branch-points", "reversals"]
 ---
 
@@ -165,3 +165,4 @@ Both probes fail → expand before writing.
 - **[Structured Handoff Header](/agent-prompt-patterns/patterns/structured-handoff-header)** — complementary: handoff headers encode state *at dispatch time*; belief-entropy checkpoints encode state *at uncertainty time* within a running session. Together they cover the full state-transfer lifecycle.
 - **[Strategic Recall Before Ideation](/agent-prompt-patterns/patterns/strategic-recall-before-ideation)** — the recall side of this pattern; belief-entropy checkpointing is the write side. Recall-before-ideation ensures that checkpointed decision rationale is actually surfaced before the next task begins.
 - **[Memory Read Before Write](/agent-prompt-patterns/patterns/memory-read-before-write)** — the concurrency-safety layer for memory writes; belief-entropy checkpointing addresses *when* to write, memory-read-before-write addresses *how* to write safely in shared storage.
+- **[Incremental Result Checkpointing](/agent-prompt-patterns/patterns/incremental-result-checkpointing)** — the deliverable-state complement: belief-entropy checkpointing tracks *uncertainty state* (what the agent knows and why it chose one path over another); incremental result checkpointing tracks *deliverable state* (what has been produced and committed). Complementary, not overlapping.
