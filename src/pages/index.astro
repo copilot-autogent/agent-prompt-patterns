@@ -100,7 +100,6 @@ const leaderboard = allPatterns
             data-category={pattern.data.category}
             data-tags={pattern.data.tags.join(',')}
             data-title={pattern.data.title}
-            data-summary={pattern.data.summary}
             data-pattern-id={id}
           >
             <div class="pattern-meta">
@@ -165,7 +164,7 @@ const leaderboard = allPatterns
         const tagMatch = !tag || (card.dataset.tags ?? '').split(',').includes(tag);
         const searchMatch = !q ||
           (card.dataset.title ?? '').toLowerCase().includes(q) ||
-          (card.dataset.summary ?? '').toLowerCase().includes(q) ||
+          (card.querySelector('.summary')?.textContent ?? '').toLowerCase().includes(q) ||
           (card.dataset.tags ?? '').toLowerCase().includes(q);
         card.style.display = (catMatch && tagMatch && searchMatch) ? '' : 'none';
       });
