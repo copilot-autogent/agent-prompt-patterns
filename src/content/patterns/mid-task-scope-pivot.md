@@ -46,12 +46,14 @@ The pattern is most valuable during the gap between task dispatch and first impl
 
 ### Step 1: The scope-budget check
 
-At the **first natural decision point** after orientation and analysis (before implementation begins), evaluate:
+At each **natural decision point** — after initial orientation, after a spike or exploratory implementation, or at any milestone where the scope picture changes significantly — evaluate:
 
 ```
 if (estimated_remaining_work / remaining_budget) > PIVOT_THRESHOLD:
     trigger scope-pivot protocol
 ```
+
+**Important**: Express both sides in the same unit. Use a proxy that is always available, such as **percentage of total budget consumed** vs **estimated percentage of work remaining**. Mixing absolute time with token counts leads to inconsistent threshold comparisons across environments. If the budget type is ambiguous (time? context window? both?), normalize to whichever limit is most likely to bind first.
 
 **PIVOT_THRESHOLD = 3×** is a practical starting point. If the work looks like it will take 3× the remaining budget, pivoting is almost certainly better than proceeding.
 
@@ -60,6 +62,9 @@ Signals that scope >> budget:
 - Implementation has multiple large sub-components not visible in the original task description
 - Dependencies (libraries, APIs, data sources) needed are not yet set up
 - The task requires architectural decisions that weren't anticipated
+- A spike or first integration attempt revealed unexpected complexity mid-implementation
+
+The check is not a one-time gate before implementation: re-evaluate at each significant decision point throughout the task. A scope surprise discovered after the first commit is still actionable if enough budget remains to produce a useful scope report.
 
 ### Step 2: The scope-finding deliverable
 
@@ -86,14 +91,15 @@ When triggering the pivot, produce a concrete document before exiting:
 ```
 
 Publish this to:
-- The GitHub issue as a comment (always)
-- The PR description if a branch already exists
+- The most visible shared surface for the task (GitHub issue comment if one exists, PR description if a branch is open, channel message if neither applies)
+- Both the issue comment AND the PR description when both are available
 
 ### Step 3: Push and exit gracefully
 
 After publishing the scope finding:
 
-- Push any work-in-progress to a branch (even if incomplete) as evidence of what was explored
+- Push any work-in-progress to a branch as evidence of what was explored. Before pushing, review the WIP for anything that shouldn't be public (credentials, internal hostnames, API keys read into files). Scope orientation typically touches only source files, but be explicit: push code and analysis notes, not environment snapshots or temporary files that may contain sensitive context.
+- Use a clearly named branch (e.g., `scope-finding/<issue-number>`) rather than a feature branch, to avoid triggering branch-based automation (CI, auto-deploy rules) that expects a shippable implementation.
 - Close the task gracefully — do NOT continue implementing past the pivot decision
 - Apply a label like `scope:larger-than-estimated` if available
 - Signal to the supervisor or dispatcher that re-scoping is needed before re-dispatch
