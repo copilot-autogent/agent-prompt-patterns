@@ -3,7 +3,7 @@ title: "Dead Sprint Recovery"
 category: "multi-agent"
 evidenceLevel: "moderate"
 summary: "When a sprint agent dies mid-flight, the work it produced survives on the branch. The recovery cost is a verify-and-merge, not a full re-sprint. Check for an open PR before spawning a replacement — if one exists, clone, run tests, self-review the diff, and merge if green."
-relatedPatterns: ["duplicate-agent-spawn-prevention", "side-effect-verification", "circuit-breaker", "observer-actor-separation", "sprint-completion-verification", "tool-error-triage", "pre-destruction-state-revalidation", "execution-budget-aware-dispatch", "incremental-result-checkpointing", "mid-task-scope-pivot"]
+relatedPatterns: ["duplicate-agent-spawn-prevention", "side-effect-verification", "circuit-breaker", "observer-actor-separation", "sprint-completion-verification", "tool-error-triage", "pre-destruction-state-revalidation", "execution-budget-aware-dispatch", "incremental-result-checkpointing", "mid-task-scope-pivot", "atomic-incremental-commits", "convergence-stall-detection", "max-retry-pivot"]
 tags: ["multi-agent", "recovery", "sprint", "dead-agent", "pr", "verify-and-merge", "connection-error", "resilience"]
 ---
 
@@ -180,3 +180,6 @@ The review tool idempotency behavior was confirmed in both cases: `review_pr` re
 - **[Circuit Breaker](/agent-prompt-patterns/patterns/circuit-breaker)** — upstream resilience: a circuit breaker reduces the probability of mid-flight death by failing fast on known-bad conditions rather than exhausting retries
 - **[Observer-Actor Separation](/agent-prompt-patterns/patterns/observer-actor-separation)** — the supervisor's role during recovery is observer (assess artifact state) before it becomes actor (merge or re-spawn)
 - **[Incremental Result Checkpointing](/agent-prompt-patterns/patterns/incremental-result-checkpointing)** — the proactive complement: while Dead Sprint Recovery is the consumer of checkpoints (it reads them during recovery), Incremental Result Checkpointing is the producer (it defines what to publish and when, so that recovery agents find real artifacts rather than a blank slate)
+- **[Atomic Incremental Commits](/agent-prompt-patterns/patterns/atomic-incremental-commits)** — the granular artifact layer: atomic commits at each phase boundary are what recovery agents inspect to classify a dead sprint as complete-but-unmerged vs. incomplete-wip; without atomic commits, the recovery agent cannot determine whether the committed work reflects a stable state
+- **[Convergence Stall Detection](/agent-prompt-patterns/patterns/convergence-stall-detection)** — the upstream signal: stall detection fires *before* a sprint dies; Dead Sprint Recovery handles the aftermath *after* death; together they form the full detect-then-recover lifecycle — stall detection's escalation path often terminates in the recovery decision tree
+- **[Max-Retry Pivot](/agent-prompt-patterns/patterns/max-retry-pivot)** — retry exhaustion is one of the common precursors to sprint death; when all pivots are exhausted and the task cannot proceed, the sprint may stall and die, triggering the Dead Sprint Recovery protocol

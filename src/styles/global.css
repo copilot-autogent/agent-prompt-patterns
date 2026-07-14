@@ -206,6 +206,24 @@ footer {
   background: var(--accent-dim);
 }
 
+.search-input {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 0.3em 0.9em;
+  border-radius: 20px;
+  font-size: 0.82rem;
+  font-family: var(--font-sans);
+  outline: none;
+  margin-left: auto;
+  min-width: 180px;
+  transition: border-color 0.15s;
+}
+
+.search-input::placeholder { color: var(--text-muted); }
+
+.search-input:focus { border-color: var(--accent); }
+
 .hero {
   padding: 4rem 0 2.5rem;
   border-bottom: 1px solid var(--border);

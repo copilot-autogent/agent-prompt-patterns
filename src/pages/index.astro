@@ -79,6 +79,13 @@ const leaderboard = allPatterns
           {cat.label}
         </button>
       ))}
+      <input
+        type="search"
+        id="pattern-search"
+        class="search-input"
+        placeholder="Search patterns…"
+        aria-label="Search patterns by title, summary, or tags"
+      />
     </div>
 
     <div class="pattern-grid" id="pattern-grid">
@@ -92,6 +99,7 @@ const leaderboard = allPatterns
             class="pattern-card"
             data-category={pattern.data.category}
             data-tags={pattern.data.tags.join(',')}
+            data-title={pattern.data.title}
             data-pattern-id={id}
           >
             <div class="pattern-meta">
@@ -138,15 +146,27 @@ const leaderboard = allPatterns
     // ── Category filter ──────────────────────────────────
     const buttons = document.querySelectorAll<HTMLButtonElement>('.filter-btn');
     const cards = document.querySelectorAll<HTMLElement>('.pattern-card');
+    const searchInput = document.querySelector<HTMLInputElement>('#pattern-search');
+
+    let activeCat = 'all';
+    let activeTag: string | undefined;
+    let activeSearch = '';
 
     function applyFilter(cat: string, tag?: string) {
+      activeCat = cat;
+      activeTag = tag;
       buttons.forEach(b => {
         b.classList.toggle('active', b.dataset.category === cat || (cat === 'all' && b.dataset.category === 'all'));
       });
+      const q = activeSearch.trim().toLowerCase();
       cards.forEach(card => {
         const catMatch = cat === 'all' || card.dataset.category === cat;
         const tagMatch = !tag || (card.dataset.tags ?? '').split(',').includes(tag);
-        card.style.display = (catMatch && tagMatch) ? '' : 'none';
+        const searchMatch = !q ||
+          (card.dataset.title ?? '').toLowerCase().includes(q) ||
+          (card.querySelector('.summary')?.textContent ?? '').toLowerCase().includes(q) ||
+          (card.dataset.tags ?? '').toLowerCase().includes(q);
+        card.style.display = (catMatch && tagMatch && searchMatch) ? '' : 'none';
       });
     }
 
@@ -162,6 +182,11 @@ const leaderboard = allPatterns
         applyFilter(btn.dataset.category ?? 'all');
       }, { signal });
     });
+
+    searchInput?.addEventListener('input', (e) => {
+      activeSearch = (e.currentTarget as HTMLInputElement).value;
+      applyFilter(activeCat, activeTag);
+    }, { signal });
 
     // ── Vote counts: merge localStorage on top of seed ──
     const merged = mergeWithLocalVotes(seedVotesRaw as VoteStore);

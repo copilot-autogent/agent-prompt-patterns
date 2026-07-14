@@ -3,7 +3,7 @@ title: "Max-Retry Pivot"
 category: "agent-autonomy"
 evidenceLevel: "strong"
 summary: "A single agent retrying the same failed approach wastes budget without making progress. After N failed attempts with the same approach class (default: 2), the agent must stop, explicitly articulate what is different about the next strategy, and either pivot or escalate — never silently attempt N+1 with identical logic."
-relatedPatterns: ["convergence-stall-detection", "constraint-falsification", "hypothesis-before-action", "operator-blocked-escalation-ladder", "rate-limit-back-off", "mid-task-scope-pivot"]
+relatedPatterns: ["convergence-stall-detection", "constraint-falsification", "hypothesis-before-action", "operator-blocked-escalation-ladder", "rate-limit-back-off", "mid-task-scope-pivot", "dead-sprint-recovery", "execution-budget-aware-dispatch"]
 tags: ["autonomy", "error-recovery", "retry", "pivot", "escalation", "strategy-switching", "loop-prevention", "debugging"]
 ---
 
@@ -181,3 +181,5 @@ Do not **increase** a sub-problem's threshold mid-flight — mid-run increases d
 - **[Hypothesis Before Action](/agent-prompt-patterns/patterns/hypothesis-before-action)** — states an explicit falsifiable hypothesis before each intervention. Max-retry-pivot depends on hypothesis-before-action: to count approach classes, the agent must have articulated what it believes and why. Without an explicit hypothesis, "approach class" cannot be reliably determined.
 - **[Operator-Blocked Escalation Ladder](/agent-prompt-patterns/patterns/operator-blocked-escalation-ladder)** — the escalation path when all pivots are exhausted. Max-retry-pivot defines *when* to escalate; the escalation ladder defines *how* — which channel, what format, what priority.
 - **[Rate-Limit Back-Off](/agent-prompt-patterns/patterns/rate-limit-back-off)** — the adjacent pattern for transient failures that are genuinely expected to resolve on retry without a strategy change (rate limits, network flaps). Max-retry-pivot applies when the failure is non-transient; rate-limit back-off applies when it is. Both patterns prevent blind retries; they differ in whether retrying the same approach is the correct response.
+- **[Dead Sprint Recovery](/agent-prompt-patterns/patterns/dead-sprint-recovery)** — the downstream consequence: when all approach classes are exhausted and escalation does not produce an unblock, the sprint may stall and die; Dead Sprint Recovery handles the classification and re-dispatch decision after that death.
+- **[Execution Budget-Aware Dispatch](/agent-prompt-patterns/patterns/execution-budget-aware-dispatch)** — the upstream constraint: the retry threshold N must be calibrated against the task's remaining wall-clock budget; in a budget-constrained sprint, the threshold should be tighter than in an open-ended task, because each retry consumes budget that cannot be reclaimed.
