@@ -3,7 +3,7 @@ title: "Execution Budget-Aware Dispatch"
 category: "multi-agent"
 evidenceLevel: "moderate"
 summary: "Sub-agents dispatched to a fixed execution budget (e.g., 4-hour task timeout) have no visibility into their remaining time. When discovery cost is high, the agent can exhaust the budget orienting — reading source structure, picking an approach — before writing a single line of code. The fix: estimate orientation cost before dispatch, embed an orientation hint for high-cost tasks, and split tasks that are clearly too large to fit in one execution window."
-relatedPatterns: ["long-horizon-task-phasing", "phase-gated-epic-body", "structured-handoff-header", "dead-sprint-recovery", "workspace-per-sprint-isolation", "incremental-result-checkpointing"]
+relatedPatterns: ["long-horizon-task-phasing", "phase-gated-epic-body", "structured-handoff-header", "dead-sprint-recovery", "workspace-per-sprint-isolation", "incremental-result-checkpointing", "mid-task-scope-pivot"]
 tags: ["multi-agent", "dispatch", "execution-budget", "orientation", "timeout", "task-splitting", "sprint", "reliability", "planning"]
 ---
 

@@ -3,7 +3,7 @@ title: "Dead Sprint Recovery"
 category: "multi-agent"
 evidenceLevel: "moderate"
 summary: "When a sprint agent dies mid-flight, the work it produced survives on the branch. The recovery cost is a verify-and-merge, not a full re-sprint. Check for an open PR before spawning a replacement — if one exists, clone, run tests, self-review the diff, and merge if green."
-relatedPatterns: ["duplicate-agent-spawn-prevention", "side-effect-verification", "circuit-breaker", "observer-actor-separation", "sprint-completion-verification", "tool-error-triage", "pre-destruction-state-revalidation", "execution-budget-aware-dispatch", "incremental-result-checkpointing"]
+relatedPatterns: ["duplicate-agent-spawn-prevention", "side-effect-verification", "circuit-breaker", "observer-actor-separation", "sprint-completion-verification", "tool-error-triage", "pre-destruction-state-revalidation", "execution-budget-aware-dispatch", "incremental-result-checkpointing", "mid-task-scope-pivot"]
 tags: ["multi-agent", "recovery", "sprint", "dead-agent", "pr", "verify-and-merge", "connection-error", "resilience"]
 ---
 

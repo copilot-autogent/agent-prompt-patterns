@@ -3,7 +3,7 @@ title: "Incremental Result Checkpointing"
 category: "task-design"
 evidenceLevel: "strong"
 summary: "Long-horizon agent tasks run in a single continuous session. When the session dies — timeout, OOM, auth revocation, container restart — all intermediate work evaporates if it was never published to a durable surface. Publish concrete deliverables at each natural phase boundary before proceeding, so that recovery finds real artifacts rather than a blank slate."
-relatedPatterns: ["belief-entropy-checkpointing", "atomic-incremental-commits", "dead-sprint-recovery", "execution-budget-aware-dispatch", "phase-gated-epic-body"]
+relatedPatterns: ["belief-entropy-checkpointing", "atomic-incremental-commits", "dead-sprint-recovery", "execution-budget-aware-dispatch", "phase-gated-epic-body", "mid-task-scope-pivot"]
 tags: ["task-design", "checkpointing", "resilience", "recovery", "durability", "long-horizon", "sprint", "intermediate-results", "timeout", "agent-death"]
 ---
 

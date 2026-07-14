@@ -91,8 +91,8 @@ When triggering the pivot, produce a concrete document before exiting:
 ```
 
 Publish this to:
-- The most visible shared surface for the task (GitHub issue comment if one exists, PR description if a branch is open, channel message if neither applies)
-- Both the issue comment AND the PR description when both are available
+- Choose **one canonical surface** per task: the GitHub issue comment if one exists, otherwise the PR description if a branch is open, otherwise a channel/shared message. Avoid posting to multiple surfaces simultaneously — duplicate scope reports with no sync rule will diverge as the re-scoping conversation evolves, leaving dispatchers with contradictory guidance. On public repos or shared channels, the scope report describes system internals; review the content for architectural or operational details before posting.
+
 
 ### Step 3: Push and exit gracefully
 
@@ -100,6 +100,7 @@ After publishing the scope finding:
 
 - Push any work-in-progress to a branch as evidence of what was explored. Before pushing, review the WIP for anything that shouldn't be public (credentials, internal hostnames, API keys read into files). Scope orientation typically touches only source files, but be explicit: push code and analysis notes, not environment snapshots or temporary files that may contain sensitive context.
 - Use a clearly named branch (e.g., `scope-finding/<issue-number>`) rather than a feature branch, to signal intent. Note: branch naming alone does not prevent CI or deploy automation — check your repo's branch protection and workflow trigger rules before pushing WIP to any branch.
+- If push access is denied or WIP branches are not permitted in the repo, preserve the orientation findings by including them in the scope-finding comment on the canonical surface instead. The goal is not losing the discovery context; a detailed comment achieves this when a branch is not feasible.
 - Close the task gracefully — do NOT continue implementing past the pivot decision
 - Apply a label like `scope:larger-than-estimated` if available
 - Signal to the supervisor or dispatcher that re-scoping is needed before re-dispatch

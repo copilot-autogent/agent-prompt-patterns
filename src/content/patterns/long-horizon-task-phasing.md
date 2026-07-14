@@ -3,7 +3,7 @@ title: "Long-Horizon Task Phasing"
 category: "multi-agent"
 evidenceLevel: "strong"
 summary: "Tasks spanning more than one session or agent suffer from context overflow and cross-session blindness. The pattern: decompose multi-session work into bounded phases, each with a clear gate artifact and a structured handoff document. The next phase loads only the handoff — not the full prior history — so every session starts with a signal-to-noise ratio close to 1."
-relatedPatterns: ["structured-handoff-header", "sprint-continuity", "belief-entropy-checkpointing", "workspace-per-sprint-isolation", "context-window-budgeting", "phase-gated-epic-body", "execution-budget-aware-dispatch"]
+relatedPatterns: ["structured-handoff-header", "sprint-continuity", "belief-entropy-checkpointing", "workspace-per-sprint-isolation", "context-window-budgeting", "phase-gated-epic-body", "execution-budget-aware-dispatch", "mid-task-scope-pivot"]
 tags: ["planning", "multi-session", "phasing", "handoff", "context-overflow", "cross-session", "phase-gate", "long-horizon", "decomposition"]
 ---
 
