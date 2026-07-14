@@ -53,15 +53,15 @@ Decouple task execution from task durability. At each natural phase boundary (de
 | Phase | Durable surface | Example artifact |
 |---|---|---|
 | Analysis/design complete | GitHub issue comment | Bullet-point design decision + chosen approach |
-| Core module implemented | Git commit (pushed to branch) | Committed file (even without wiring); the commit SHA is the stable recovery anchor — branch refs are mutable |
+| Core module implemented | Git commit (pushed to branch) + issue comment with SHA | Committed file (even without wiring); publishing the commit SHA in an append-only issue comment makes it forensically durable — the commit remains reachable even if the branch is later deleted or force-pushed |
 | Tests written | Git commit (pushed to branch) | Test file committed as a separate, named checkpoint commit |
 | Integration wired | Git commit (pushed to branch) | Entry-point change committed |
-| Verification complete | GitHub issue comment | Test results summary — prefer issue comments over PR description; PR description is editable without history, making it unreliable as a durable checkpoint surface |
+| Verification complete | GitHub issue comment | Test results summary — prefer append-only issue comments over PR descriptions; PR descriptions are editable without history, making them unreliable as forensic checkpoint surfaces |
 
 ### What NOT to do
 
 - ❌ Write the entire implementation in context before making any commits
-- ❌ Wait until "it's clean enough to push" — push intermediate, clearly-labelled WIP; use a draft PR or branch-only push to prevent accidental merges of incomplete work
+- ❌ Wait until "it's clean enough to push" — push intermediate, clearly-labelled WIP; prefer branch-only pushes or draft PRs to avoid triggering CI, reviewer notifications, or deployment pipelines on incomplete work
 - ❌ Rely on scratchpad files in `/tmp` or session state as checkpoints (not durable across agent death)
 - ❌ Publish only a status update ("working on step 3…") without a concrete artifact — a status update is not recoverable
 
@@ -73,14 +73,14 @@ Use explicit phase markers in every checkpoint artifact:
 
 - **Issue comments**: prefix with `[CHECKPOINT: design]`, `[CHECKPOINT: implementation]`, `[CHECKPOINT: verification]`
 - **Commit messages**: include the phase name — `feat: [core-module] parsing logic without wiring — checkpoint`
-- **PR descriptions**: list completed phases as a checklist with completion state (checked = done)
+- **PR bodies**: list completed phases as a checklist with completion state (checked = done)
 
-This makes each checkpoint surface independently parseable: a recovery agent finds the most recent comment prefixed `[CHECKPOINT: ...]` and reads which phase it represents, without needing to reconstruct the timeline across multiple surfaces.
+This makes each checkpoint surface independently parseable: a recovery agent finds the highest-phase `[CHECKPOINT: ...]` comment (not simply the most recent artifact by timestamp, which can be misleading when checkpoints land on different surfaces) and reads which phase it represents.
 
 ### When the agent dies
 
 A recovery agent reading the durable surface can:
-1. Identify exactly which phase completed by locating the most recent `[CHECKPOINT: phase-name]` artifact
+1. Identify exactly which phase completed by locating the highest-phase `[CHECKPOINT: phase-name]` marker across all checkpoint surfaces
 2. Resume from that phase (not from scratch)
 3. Classify the PR/work-in-progress as "complete-but-unmerged" vs "incomplete WIP" (see [Dead Sprint Recovery](/agent-prompt-patterns/patterns/dead-sprint-recovery))
 
@@ -122,8 +122,8 @@ Each checkpoint artifact must be independently readable. A recovery agent should
 - **Checkpoint granularity mismatch**: Too-frequent checkpoints create noise and slow execution; too-infrequent checkpoints leave large gaps that a recovery agent must reconstruct. Calibrate to task duration (see granularity table above).
 - **Checkpoint content over-truncation**: Under time pressure, agents tend to produce minimal checkpoints ("done phase 1"). The value of a checkpoint is in the content — the specific decisions made, the specific code committed, the specific test results. Truncating the content to save time defeats the purpose.
 - **Non-durable checkpoint surfaces**: In-context scratchpads, `/tmp` files, and environment variables do not survive agent death. Publish to GitHub (issues, PRs, commits) or other external persistent stores.
-- **Mutable checkpoint surfaces**: Branch refs can be force-pushed or deleted; PR descriptions can be silently rewritten. For checkpoints that must be forensically stable, prefer append-only surfaces (issue comments, commit messages) over editable ones (PR descriptions, branch refs).
-- **Accidental merge of WIP commits**: A branch push that makes a draft PR ready-for-review risks being picked up by automation. Always open intermediate checkpoints as draft PRs and include `[WIP]` or `[CHECKPOINT]` markers in commit messages to prevent premature merge.
+- **Mutable checkpoint surfaces**: Branch refs can be force-pushed or deleted; PR descriptions can be silently rewritten. Anchor checkpoints to forensically stable surfaces (append-only issue comments, commit messages) rather than relying solely on branch names or PR description text.
+- **Intermediate pushes triggering automation**: Branch pushes or PR creation can trigger CI runs, reviewer notifications, deployment previews, or external integrations. To avoid side-effect regressions, prefer branch-only pushes (no PR) for intermediate checkpoints; if a PR is opened, mark it as draft and disable auto-merge rules.
 
 ## Related Patterns
 
