@@ -3,7 +3,7 @@ title: "Convergence Stall Detection"
 category: "agent-autonomy"
 evidenceLevel: "emerging"
 summary: "Agents can loop without making measurable forward progress — re-reading the same files, re-running the same failing test, or repeatedly attempting the same fix strategy. Maintain a lightweight progress ledger and abort or pivot when N consecutive steps leave state unchanged."
-relatedPatterns: ["circuit-breaker", "empirical-validation-loop", "constraint-falsification", "max-retry-pivot", "mid-task-scope-pivot"]
+relatedPatterns: ["circuit-breaker", "empirical-validation-loop", "constraint-falsification", "max-retry-pivot", "mid-task-scope-pivot", "dead-sprint-recovery", "execution-budget-aware-dispatch"]
 tags: ["autonomy", "error-recovery", "loop-detection", "stall", "progress", "pivot", "escalation"]
 ---
 
@@ -165,3 +165,5 @@ Suggested next step: [what a human should try, or what information would unblock
 - **[Empirical Validation Loop](/agent-prompt-patterns/patterns/empirical-validation-loop)** — the progress signal in stall detection is analogous to the measurable outcome in empirical validation: both require defining what "progress" looks like before observing it.
 - **[Constraint Falsification Before Planning](/agent-prompt-patterns/patterns/constraint-falsification)** — CI fix loop stalls often stem from a false "blocked" premise inherited from a misdiagnosis. Constraint falsification prevents the misdiagnosis; stall detection catches the loop when it happens anyway.
 - **[Max-Retry Pivot](/agent-prompt-patterns/patterns/max-retry-pivot)** — convergence stall detection fires when overall task state has not advanced across N steps; max-retry-pivot fires earlier, at the individual approach level, when the same strategy is tried N times in a row. They are complementary guards at different scopes: max-retry-pivot prevents same-approach cycling within a sub-problem, convergence stall detection prevents broader looping across the full task.
+- **[Dead Sprint Recovery](/agent-prompt-patterns/patterns/dead-sprint-recovery)** — the downstream action: stall detection fires within a *live* sprint; when escalation fails or the sprint dies anyway, Dead Sprint Recovery handles the aftermath. The structured failure summary that stall detection produces is the primary input to the recovery classification decision.
+- **[Execution Budget-Aware Dispatch](/agent-prompt-patterns/patterns/execution-budget-aware-dispatch)** — the upstream constraint: knowing the wall-clock budget before dispatch enables calibrating the stall-detection threshold; a task with a 4h budget should set a tighter stall threshold than an open-ended research task, because the cost of burning budget on a stall is proportional to the remaining time.

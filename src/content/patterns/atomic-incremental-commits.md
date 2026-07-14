@@ -3,7 +3,7 @@ title: "Atomic Incremental Commits"
 category: "task-design"
 evidenceLevel: "moderate"
 summary: "Agents accumulate large changesets locally — editing dozens of files across many features — and commit everything in one large 'implement feature X' commit. This makes bisection impossible, inflates PR review blast radius, and forces full rollback of unrelated changes when one part needs to be reverted. Structure every change as the smallest independently-deployable unit, committed immediately upon completion."
-relatedPatterns: ["verification-before-completion", "long-horizon-task-phasing", "scope-boundary-declaration", "pre-commit-planning-phase"]
+relatedPatterns: ["verification-before-completion", "long-horizon-task-phasing", "scope-boundary-declaration", "pre-commit-planning-phase", "incremental-result-checkpointing", "dead-sprint-recovery"]
 tags: ["git", "commits", "atomicity", "rollback", "bisection", "pr-hygiene", "task-design", "incremental", "blast-radius"]
 ---
 
@@ -139,3 +139,5 @@ Avoid: `"wip"`, `"stuff"`, `"various fixes"`, `"implement feature"`. These messa
 - **[Long-Horizon Task Phasing](/agent-prompt-patterns/patterns/long-horizon-task-phasing)** — phases map to commit batches; each phase boundary is a natural commit point where the accumulated work of the phase is checkpointed as an atomic unit before the next phase begins
 - **[Scope Boundary Declaration](/agent-prompt-patterns/patterns/scope-boundary-declaration)** — the IN/OUT scope declaration defines which files are in-scope; atomic commits enforce this at the commit level by keeping each commit to one logical concern; together they bound both the target set and the commit granularity
 - **[Pre-Commit Planning Phase](/agent-prompt-patterns/patterns/pre-commit-planning-phase)** — pre-commit planning identifies the sequence of changes before implementation begins; planned sequences map naturally to atomic commits, because each planned step is a candidate commit boundary
+- **[Incremental Result Checkpointing](/agent-prompt-patterns/patterns/incremental-result-checkpointing)** — the durable-publishing complement: atomic incremental commits create the granular git history that incremental result checkpointing relies on when recovering from mid-task failure; a checkpoint without a pushed commit is not durable, and a pushed commit without a coherent scope is not recoverable
+- **[Dead Sprint Recovery](/agent-prompt-patterns/patterns/dead-sprint-recovery)** — atomic commits are the primary artifact that recovery agents inspect when classifying a dead sprint as complete-but-unmerged vs. incomplete-wip; each push to the branch is a checkpoint the recovery agent can trust as a stable boundary

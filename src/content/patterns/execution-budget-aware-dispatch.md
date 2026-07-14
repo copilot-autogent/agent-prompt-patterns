@@ -3,7 +3,7 @@ title: "Execution Budget-Aware Dispatch"
 category: "multi-agent"
 evidenceLevel: "moderate"
 summary: "Sub-agents dispatched to a fixed execution budget (e.g., 4-hour task timeout) have no visibility into their remaining time. When discovery cost is high, the agent can exhaust the budget orienting — reading source structure, picking an approach — before writing a single line of code. The fix: estimate orientation cost before dispatch, embed an orientation hint for high-cost tasks, and split tasks that are clearly too large to fit in one execution window."
-relatedPatterns: ["long-horizon-task-phasing", "phase-gated-epic-body", "structured-handoff-header", "dead-sprint-recovery", "workspace-per-sprint-isolation", "incremental-result-checkpointing", "mid-task-scope-pivot"]
+relatedPatterns: ["long-horizon-task-phasing", "phase-gated-epic-body", "structured-handoff-header", "dead-sprint-recovery", "workspace-per-sprint-isolation", "incremental-result-checkpointing", "mid-task-scope-pivot", "convergence-stall-detection", "max-retry-pivot"]
 tags: ["multi-agent", "dispatch", "execution-budget", "orientation", "timeout", "task-splitting", "sprint", "reliability", "planning"]
 ---
 
@@ -165,3 +165,5 @@ Key facts:
 - **[Dead Sprint Recovery](/agent-prompt-patterns/patterns/dead-sprint-recovery)** — recovering after a sprint dies mid-flight; execution budget-aware dispatch is the preventive complement — apply this pattern before dispatch; apply dead sprint recovery after a sprint has already failed
 - **[Workspace-per-Sprint Isolation](/agent-prompt-patterns/patterns/workspace-per-sprint-isolation)** — giving each spawned agent an isolated working directory; isolation ensures that a re-dispatch after a timeout does not collide with any uncommitted state left by the timed-out agent
 - **[Incremental Result Checkpointing](/agent-prompt-patterns/patterns/incremental-result-checkpointing)** — the in-flight complement: budget-aware dispatch reduces orientation waste so implementation starts early; incremental result checkpointing publishes intermediate deliverables at phase boundaries so that work survives if the budget estimate proves too short and the agent times out mid-task
+- **[Convergence Stall Detection](/agent-prompt-patterns/patterns/convergence-stall-detection)** — the in-flight circuit breaker: knowing the wall-clock budget at dispatch time enables calibrating the stall threshold; stall detection fires when the budget is being consumed without task-state progress, which is exactly the waste that budget-aware dispatch was designed to prevent
+- **[Max-Retry Pivot](/agent-prompt-patterns/patterns/max-retry-pivot)** — the sub-task retry guard: the max-retry threshold must be calibrated against the dispatch budget; a tighter budget requires a tighter threshold so that retry exhaustion is detected before the overall wall-clock limit is reached
