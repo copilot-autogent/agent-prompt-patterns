@@ -80,26 +80,14 @@ A timestamp changing proves *something* happened; a content hash or commit SHA c
 
 ```bash
 # Before deploy: record the current serving commit SHA
-# Node 18+ with native fetch; use `node --input-type=module` for ESM eval syntax
-BEFORE_SHA=$(node --input-type=module <<'EOF'
-const r = await fetch('https://example.github.io/app/?cb=' + Date.now(), {cache:'no-store'});
-const html = await r.text();
-const m = html.match(/data-build-sha="([a-f0-9]+)"/);
-console.log(m ? m[1] : 'unknown');
-EOF
-)
+# Uses an async IIFE so top-level await works in CommonJS node -e mode
+BEFORE_SHA=$(node -e "(async()=>{const r=await fetch('https://example.github.io/app/?cb='+Date.now(),{cache:'no-store'});const h=await r.text();const m=h.match(/data-build-sha=\"([a-f0-9]+)\"/);console.log(m?m[1]:'unknown');})()")
 
 # [perform deploy / merge / push]
 
 # After deploy: confirm the serving SHA changed
 # Repeat with delay until SHA changes (CDN propagation) or timeout
-AFTER_SHA=$(node --input-type=module <<'EOF'
-const r = await fetch('https://example.github.io/app/?cb=' + Date.now(), {cache:'no-store'});
-const html = await r.text();
-const m = html.match(/data-build-sha="([a-f0-9]+)"/);
-console.log(m ? m[1] : 'unknown');
-EOF
-)
+AFTER_SHA=$(node -e "(async()=>{const r=await fetch('https://example.github.io/app/?cb='+Date.now(),{cache:'no-store'});const h=await r.text();const m=h.match(/data-build-sha=\"([a-f0-9]+)\"/);console.log(m?m[1]:'unknown');})()")
 if [ "$BEFORE_SHA" = "$AFTER_SHA" ]; then
   echo "FAIL: serving SHA unchanged after deploy"
 else
@@ -107,13 +95,13 @@ else
 fi
 ```
 
-**If the site does not embed a build SHA**, use the GitHub Actions run result for the merge commit as the strongest available delta signal — the deploy is confirmed when the run tied to the merge SHA concludes `success`, not when a health check returns 200. Note: this check runs through the CI/CD platform rather than a fully orthogonal channel, but it uniquely identifies the action (a run cannot exist before the merge that triggered it), and the deploy job's `success` conclusion indicates the artifact was built and published.
+**If the site does not embed a build SHA**, use the GitHub Actions run result for the merge commit as the strongest available delta signal — the deploy is confirmed when the run tied to the merge SHA concludes `success`, not when a health check returns 200. Note: this check goes through the CI/CD platform rather than a fully orthogonal channel, but it uniquely identifies the action (a run cannot exist before the merge that triggered it), and the deploy job's `success` conclusion indicates the artifact was built and published. Filter to the specific workflow that owns the deploy job — a SHA can have multiple workflow runs (CI, lint, deploy), and the CI workflow succeeding does not imply the deploy workflow succeeded:
 
 ```
 # After merging SHA=<merge_sha>:
 # 1. Query Actions runs: GET /repos/{owner}/{repo}/actions/runs?head_sha=<merge_sha>
-#    Note: a single SHA can have multiple workflow runs (e.g., CI + deploy).
-#    Filter to the specific workflow that owns the deploy job (e.g., by workflow name/path).
+#    Filter by workflow name/path to the deploy workflow specifically
+#    (e.g., ?workflow_id=deploy.yml or filter runs by workflow_name in the response)
 # 2. For the deploy workflow run, fetch its jobs:
 #    GET /repos/{owner}/{repo}/actions/runs/{run_id}/jobs
 # 3. Confirm the deploy job's conclusion === "success"
@@ -130,7 +118,7 @@ Never declare "CI clean" from local test output alone. The delta is the post-mer
 After merge of SHA=<merge_sha>:
 1. Query the Actions API: GET /repos/{owner}/{repo}/actions/runs?head_sha=<merge_sha>
    — Note: multiple runs may exist for one SHA (different workflow files).
-     Query each relevant workflow's run separately.
+     Query each relevant workflow's run by filtering by workflow name/path.
 2. For each required workflow (build, test, deploy):
    a. Fetch its jobs: GET /repos/{owner}/{repo}/actions/runs/{run_id}/jobs
    b. Assert: each job's conclusion === "success"
@@ -152,20 +140,24 @@ For a dashboard panel that fetches and displays data:
          (only present if JavaScript fetched data and hydrated the component)
 
 Concretely:
-  - Before: note the expected data range (e.g., "panel should show a non-empty chart")
+  - Before: note the expected state (e.g., "panel should show a non-empty chart after load")
   - After: browser render → assert canvas/content elements count > 0
-           AND assert no visible "Loading…" text in rendered DOM
+           AND assert no PERSISTENT "Loading…" indicators for the panels you just deployed
+           (apps may show transient loading spinners; wait for networkidle, then check)
   The delta: the panel went from placeholder → data (provable only via browser render)
+  Note: some apps intentionally keep background-loading indicators for non-critical data;
+  scope your assertion to the specific components affected by the deployed change.
 ```
 
 ### Anchoring to the merge SHA (the most general delta)
 
-For any GitHub-Pages-style deploy, the merge SHA is the universal anchor. Every legitimate deployment after a merge must eventually serve the merged content. A check that confirms "the deploy run for SHA X concluded success AND the artifact on-disk reflects SHA X" is stronger than any HTTP check:
+For GitHub-Pages-style deploys on repositories with a single deploy workflow, the merge SHA is a strong anchor. A check that confirms "the deploy run for SHA X concluded success AND the artifact on-disk reflects SHA X" is stronger than any HTTP check. Note that this does not apply to repos using selective deploy conditions (e.g., only deploy when tag matches, or feature-flag gated rollouts) — in those cases, verify the deploy condition was also met:
 
 ```
 Delta check flow for any Pages/static site deploy:
 1. Record merge SHA: git.head_sha = <sha_of_merged_commit>
-2. Query Actions: find the deploy run where head_sha = <sha_of_merged_commit>
+2. Query Actions: find the deploy workflow run where head_sha = <sha_of_merged_commit>
+   (filter to the deploy workflow specifically, not CI-only workflows)
 3. Wait for run.conclusion = "success" (the deploy job specifically, not just the build job)
 4. (Optional) Cache-bypass fetch of the live URL + extract any embedded SHA/hash
 
