@@ -82,20 +82,25 @@ A timestamp changing proves *something* happened; a content hash or commit SHA c
 # Before deploy: record the current serving commit SHA
 # Uses an async IIFE so top-level await works in CommonJS node -e mode
 BEFORE_SHA=$(node -e "(async()=>{const r=await fetch('https://example.github.io/app/?cb='+Date.now(),{cache:'no-store'});const h=await r.text();const m=h.match(/data-build-sha=\"([a-f0-9]+)\"/);console.log(m?m[1]:'unknown');})()")
+EXPECTED_SHA="<merge_commit_sha>"  # set to the merge commit SHA before running
 
 # [perform deploy / merge / push]
 
-# After deploy: confirm the serving SHA changed
-# Repeat with delay until SHA changes (CDN propagation) or timeout
+# After deploy: confirm the serving SHA matches the expected (deployed) SHA
+# Repeat with delay until SHA matches (CDN propagation) or timeout
 AFTER_SHA=$(node -e "(async()=>{const r=await fetch('https://example.github.io/app/?cb='+Date.now(),{cache:'no-store'});const h=await r.text();const m=h.match(/data-build-sha=\"([a-f0-9]+)\"/);console.log(m?m[1]:'unknown');})()")
-if [ "$BEFORE_SHA" = "$AFTER_SHA" ]; then
-  echo "FAIL: serving SHA unchanged after deploy"
+if [ "$AFTER_SHA" = "$EXPECTED_SHA" ]; then
+  echo "PASS: serving SHA matches deployed commit $EXPECTED_SHA"
+elif [ "$BEFORE_SHA" = "$AFTER_SHA" ]; then
+  echo "FAIL: serving SHA unchanged after deploy (still $BEFORE_SHA)"
 else
-  echo "PASS: serving SHA changed $BEFORE_SHA → $AFTER_SHA"
+  echo "WARN: serving SHA changed ($BEFORE_SHA → $AFTER_SHA) but does not match expected $EXPECTED_SHA"
 fi
+# Note: comparing against the EXPECTED SHA (not just "did it change?") prevents a concurrent deploy
+# from triggering a false positive.
 ```
 
-**If the site does not embed a build SHA**, use the GitHub Actions run result for the merge commit as the strongest available delta signal — the deploy is confirmed when the run tied to the merge SHA concludes `success`, not when a health check returns 200. Note: this check goes through the CI/CD platform rather than a fully orthogonal channel, but it uniquely identifies the action (a run cannot exist before the merge that triggered it), and the deploy job's `success` conclusion indicates the artifact was built and published. Filter to the specific workflow that owns the deploy job — a SHA can have multiple workflow runs (CI, lint, deploy), and the CI workflow succeeding does not imply the deploy workflow succeeded:
+**If the site does not embed a build SHA**, use the GitHub Actions deploy-job conclusion for the merge commit as the strongest available delta signal — the deploy is confirmed when the run tied to the merge SHA concludes `success`, not when a health check returns 200. Important caveats: (1) some Pages/`workflow_run`/branch-deploy setups trigger the serving deploy from a different SHA or ref than the merge commit — verify that your deploy workflow uses `on: push` to `main` and uses the merge commit, not a `workflow_run` trigger from a separate ref; (2) `conclusion === "success"` on the deploy job confirms the artifact was published to the hosting platform, but it does not prove CDN propagation is complete or that the live URL is serving the new artifact yet — combine with a cache-bypass content fetch after a 30–90s propagation wait to confirm end-to-end. Filter to the specific workflow that owns the deploy job — a SHA can have multiple workflow runs (CI, lint, deploy), and the CI workflow succeeding does not imply the deploy workflow succeeded:
 
 ```
 # After merging SHA=<merge_sha>:
@@ -143,10 +148,13 @@ Concretely:
   - Before: note the expected state (e.g., "panel should show a non-empty chart after load")
   - After: browser render → assert canvas/content elements count > 0
            AND assert no PERSISTENT "Loading…" indicators for the panels you just deployed
-           (apps may show transient loading spinners; wait for networkidle, then check)
+           (apps may show transient loading spinners; use a fixed post-load delay
+            rather than networkidle, which can hang on apps with polling/websockets)
   The delta: the panel went from placeholder → data (provable only via browser render)
   Note: some apps intentionally keep background-loading indicators for non-critical data;
   scope your assertion to the specific components affected by the deployed change.
+  For networkidle-unreliable apps (polling, analytics, websockets): use domcontentloaded
+  + an explicit delay (e.g., 3s) + locator assertion with a timeout instead of networkidle.
 ```
 
 ### Anchoring to the merge SHA (the most general delta)
