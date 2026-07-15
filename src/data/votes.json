@@ -13,6 +13,7 @@
   "dead-sprint-recovery": { "up": 9, "down": 2 },
   "decision-ownership": { "up": 15, "down": 1 },
   "dedup-search-before-filing": { "up": 6, "down": 0 },
+  "delta-anchored-verification": { "up": 0, "down": 0 },
   "deploy-lag-verification": { "up": 8, "down": 1 },
   "dispatcher-pattern": { "up": 11, "down": 2 },
   "duplicate-agent-spawn-prevention": { "up": 5, "down": 0 },
