@@ -78,20 +78,28 @@ A timestamp changing proves *something* happened; a content hash or commit SHA c
 
 **Deploy verification (replaces HTTP 200 check)**
 
-```
+```bash
 # Before deploy: record the current serving commit SHA
-BEFORE_SHA=$(node -e "
-  const r = await fetch('https://example.github.io/app/?cb=' + Date.now(), {cache:'no-store'});
-  const html = await r.text();
-  const m = html.match(/data-build-sha=\"([a-f0-9]+)\"/);
-  console.log(m ? m[1] : 'unknown');
-")
+# Node 18+ with native fetch; use `node --input-type=module` for ESM eval syntax
+BEFORE_SHA=$(node --input-type=module <<'EOF'
+const r = await fetch('https://example.github.io/app/?cb=' + Date.now(), {cache:'no-store'});
+const html = await r.text();
+const m = html.match(/data-build-sha="([a-f0-9]+)"/);
+console.log(m ? m[1] : 'unknown');
+EOF
+)
 
 # [perform deploy / merge / push]
 
 # After deploy: confirm the serving SHA changed
 # Repeat with delay until SHA changes (CDN propagation) or timeout
-AFTER_SHA=$(node -e "...")
+AFTER_SHA=$(node --input-type=module <<'EOF'
+const r = await fetch('https://example.github.io/app/?cb=' + Date.now(), {cache:'no-store'});
+const html = await r.text();
+const m = html.match(/data-build-sha="([a-f0-9]+)"/);
+console.log(m ? m[1] : 'unknown');
+EOF
+)
 if [ "$BEFORE_SHA" = "$AFTER_SHA" ]; then
   echo "FAIL: serving SHA unchanged after deploy"
 else
@@ -99,29 +107,38 @@ else
 fi
 ```
 
-**If the site does not embed a build SHA**, use the GitHub Actions run result for the merge commit as the authoritative delta channel — the deploy is confirmed when the run tied to the merge SHA concludes `success`, not when a health check returns 200:
+**If the site does not embed a build SHA**, use the GitHub Actions run result for the merge commit as the strongest available delta signal — the deploy is confirmed when the run tied to the merge SHA concludes `success`, not when a health check returns 200. Note: this check runs through the CI/CD platform rather than a fully orthogonal channel, but it uniquely identifies the action (a run cannot exist before the merge that triggered it), and the deploy job's `success` conclusion indicates the artifact was built and published.
 
 ```
 # After merging SHA=<merge_sha>:
-# Query Actions runs for the repository and find the run triggered by <merge_sha>
-# Confirm run.conclusion === "success" (not "in_progress", not "cancelled", not "failure")
-# This is the authoritative delta: the CI/CD system recorded a new run, and that run succeeded
-# A 200 on the URL does NOT replace this check
+# 1. Query Actions runs: GET /repos/{owner}/{repo}/actions/runs?head_sha=<merge_sha>
+#    Note: a single SHA can have multiple workflow runs (e.g., CI + deploy).
+#    Filter to the specific workflow that owns the deploy job (e.g., by workflow name/path).
+# 2. For the deploy workflow run, fetch its jobs:
+#    GET /repos/{owner}/{repo}/actions/runs/{run_id}/jobs
+# 3. Confirm the deploy job's conclusion === "success"
+#    (run.conclusion is the rolled-up result; check per-job conclusion for the specific deploy job)
+# This is the delta: a run that did not exist before the merge now exists and its deploy job succeeded.
+# A 200 on the URL does NOT replace this check.
 ```
 
 **CI verification (replaces "tests pass" check)**
 
-Never declare "CI clean" from local test output alone. The delta is the post-merge CI run for the *specific merge commit SHA*:
+Never declare "CI clean" from local test output alone. The delta is the post-merge CI run for the *specific merge commit SHA*, checked per-job:
 
 ```
 After merge of SHA=<merge_sha>:
 1. Query the Actions API: GET /repos/{owner}/{repo}/actions/runs?head_sha=<merge_sha>
-2. Wait for the run to complete (poll until conclusion is not null)
-3. Assert: run.conclusion === "success" for EACH job (build, test, tsc, deploy)
-4. Only then declare CI clean
+   — Note: multiple runs may exist for one SHA (different workflow files).
+     Query each relevant workflow's run separately.
+2. For each required workflow (build, test, deploy):
+   a. Fetch its jobs: GET /repos/{owner}/{repo}/actions/runs/{run_id}/jobs
+   b. Assert: each job's conclusion === "success"
+      (tsc, vitest, lint, and deploy are separate jobs — check all)
+3. Only then declare CI clean.
 
 Do NOT use "local tests passed" as a substitute.
-The delta is: a new CI run appeared, linked to the merge SHA, and concluded success.
+The delta is: new CI runs appeared, linked to the merge SHA, and ALL required jobs concluded success.
 ```
 
 **Rendered-content verification (replaces marker-grep)**
