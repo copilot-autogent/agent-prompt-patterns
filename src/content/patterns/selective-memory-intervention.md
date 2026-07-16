@@ -73,13 +73,15 @@ Before launching sprint agent for issue #456:
 ```
 While agent executes:
 1. Memory agent observes trajectory (tool calls, plan updates)
-   ⚠️  Redact or exclude secrets, credentials, and PII from stored trajectories.
+   ⚠️  Avoid storing or replaying sensitive content from trajectories (secrets,
+       credentials, source/config data, PII) — redact before recording.
 2. When agent proposes action X, memory agent checks: "Did X fail before?"
-3. If yes → inject reminder:
+3. If yes → inject reminder (once per unique failure; skip if same note was
+   already injected this session to prevent reminder loops):
    "FYI: Approach X was attempted in PR #123 and failed because..."
 4. If no → stay silent
 ```
-> **Freshness caveat**: check that the stored failure is still relevant — a constraint relaxed or a bug fixed since the failure record was written can produce false-positive blocks. Include a version or date tag on failure records and skip injection if the codebase or config has materially changed since.
+> **Freshness caveat**: check that the stored failure is still relevant — a constraint relaxed or a bug fixed since the failure record was written can produce false-positive blocks. Tag failure records with version, repo, branch, environment scope, and task context; skip injection if the codebase, config, or task scope has materially changed since the failure was recorded.
 
 **Pattern C: Query-guided selective retrieval**
 ```
@@ -211,4 +213,4 @@ Don't use when:
 
 **Cross-references**:
 - Academic: Meta AI behavioral state decay research (arXiv 2607.08716)
-- Related patterns: `memory-read-before-write`, `strategic-recall-before-ideation`, `proactive-constraint-recall`
+- Related patterns: `memory-read-before-write`, `strategic-recall-before-ideation`, `proactive-constraint-recall`, `feedback-loop-via-memory`, `belief-entropy-checkpointing`
