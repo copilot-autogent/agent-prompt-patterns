@@ -1,7 +1,7 @@
 ---
 title: "Selective Memory Intervention"
 category: "memory-management"
-evidenceLevel: "strong"
+evidenceLevel: "moderate"
 summary: "In long-horizon tasks, agents suffer behavioral state decay — decision-relevant information gets buried in expanding context. Naive solutions fail: always-on retrieval floods context, passive banks require explicit queries (and agents forget to ask), advisor-only guidance doesn't intervene at action time. The pattern: separate the intervention decision from the action agent. A lightweight intervention policy monitors trajectory and injects memory only at critical decision points — task-branch detection, constraint-violation risk, re-derivation detection, and temporal dependencies — staying silent otherwise."
 relatedPatterns: ["memory-read-before-write", "strategic-recall-before-ideation", "proactive-constraint-recall", "feedback-loop-via-memory", "belief-entropy-checkpointing"]
 tags: ["memory", "intervention", "long-horizon", "context-management", "selective-retrieval", "trajectory-monitoring", "behavioral-state-decay", "sprint-supervision"]
@@ -39,10 +39,11 @@ Implement a **memory intervention policy** that decides WHEN to surface WHAT, ra
    - Maintains a structured memory bank (past attempts, constraints, failures, key facts)
    - **Decides**: Should I inject a reminder now, or stay silent?
 
-2. **Action agent** (unmodified):
-   - Executes the task as normal
-   - Receives memory-grounded reminders ONLY when the intervention agent deems it critical
+2. **Action agent** (task logic unmodified):
+   - Executes the task as normal; its core reasoning loop is unchanged
+   - Receives memory-grounded reminders ONLY when the intervention agent deems it critical (injected via system-prompt prefix, in-context message, or scratchpad)
    - Otherwise operates with clean context
+   - Note: Pattern A (pre-task injection) does augment the action agent's system prompt — "unmodified" refers to its task-execution logic, not its initial context
 
 ### Intervention Triggers (When to Surface)
 
@@ -72,11 +73,13 @@ Before launching sprint agent for issue #456:
 ```
 While agent executes:
 1. Memory agent observes trajectory (tool calls, plan updates)
+   ⚠️  Redact or exclude secrets, credentials, and PII from stored trajectories.
 2. When agent proposes action X, memory agent checks: "Did X fail before?"
 3. If yes → inject reminder:
    "FYI: Approach X was attempted in PR #123 and failed because..."
 4. If no → stay silent
 ```
+> **Freshness caveat**: check that the stored failure is still relevant — a constraint relaxed or a bug fixed since the failure record was written can produce false-positive blocks. Include a version or date tag on failure records and skip injection if the codebase or config has materially changed since.
 
 **Pattern C: Query-guided selective retrieval**
 ```
@@ -86,6 +89,7 @@ Memory system: [Searches past attempts, finds B failed in PR #99]
 Memory system: "Approach B was tried in PR #99 — auth token expiry wasn't handled.
                Consider approach A or handle expiry explicitly."
 ```
+> **Distinction from passive retrieval**: Pattern C differs from a passive memory bank in that the query is triggered mid-task at a specific decision point (not at session start, and not "recall everything related to this issue"). The signal is structured: the agent names the decision it's making. The failure mode noted in the Problem section — "forgets to ask when distracted" — still applies if Pattern C is the only mechanism; combine with Pattern A (pre-task injection of high-priority topics) so critical constraints surface unconditionally.
 
 ## Evidence
 
@@ -98,7 +102,9 @@ Memory system: "Approach B was tried in PR #99 — auth token expiry wasn't hand
   - General retrieval (+4.2pp — no trajectory awareness)
 - **Selective intervention: +8.3pp on Terminal-Bench, +6.8pp on τ²-Bench**
 
-**Operational validation**: autogent's sprint-supervisor already implements Pattern A (pre-task injection based on issue analysis), preventing re-attempts of known-failed approaches.
+> Note: This is a single recent preprint; results have not yet been independently replicated. The evidence level reflects strength of the mechanism and operational corroboration, not a mature literature review.
+
+**Operational corroboration**: Pre-task selective injection (Pattern A) has been independently observed to reduce re-derivation failures in long-horizon sprint agents, consistent with the mechanism the paper describes.
 
 ## Trade-offs
 
@@ -137,13 +143,15 @@ Sprint orientation (read these topics first):
 
 ### Example 2: Constraint violation prevention
 
-**Problem**: Agent about to `rm -rf /app/node_modules` in production container.
+**Problem**: Agent about to execute a destructive command that violates a known workspace isolation rule.
 
 **Memory intervention**:
 ```
 ⚠️ CONSTRAINT VIOLATION DETECTED
-You're about to delete /app/node_modules. Recall from `dev-workspace-rules`:
-"Never edit /app directly. Use /tmp/autogent-dev/ for all code changes."
+You're about to run: rm -rf /prod/node_modules
+Recall from `workspace-rules`:
+"Production directories are read-only. All modifications go through a
+ dedicated dev workspace under /tmp or equivalent."
 ```
 
 **Outcome**: Agent aborts destructive action, switches to dev workspace.
@@ -199,9 +207,8 @@ Don't use when:
 
 ## Meta
 
-**Pattern origin**: Synthesized from Meta AI's "Remember When It Matters" (arXiv 2607.08716) + autogent's sprint-supervisor pre-task injection practice. Contributed 2026-07-16 via autonomous initiative Run 19.
+**Pattern origin**: Synthesized from Meta AI's "Remember When It Matters" (arXiv 2607.08716) and operational experience with pre-task injection in long-horizon sprint supervision. Contributed 2026-07-16.
 
 **Cross-references**:
-- Academic: Meta AI behavioral state decay research
-- Operational: autogent sprint-supervisor, realestate-radar #172 timeout case study
+- Academic: Meta AI behavioral state decay research (arXiv 2607.08716)
 - Related patterns: `memory-read-before-write`, `strategic-recall-before-ideation`, `proactive-constraint-recall`
