@@ -19,6 +19,7 @@ function parseFrontmatter(content) {
       relatedSlugs.push(...parseListValues(inlineValues.slice(1, -1)));
     } else if (inlineValues === '') {
       for (const line of lines.slice(relatedLine + 1)) {
+        if (/^\s*(?:#.*)?$/.test(line)) continue;
         const item = line.match(/^\s+-\s+(.+?)\s*$/);
         if (!item) break;
         relatedSlugs.push(...parseListValues(item[1]));
@@ -37,10 +38,13 @@ function parseListValues(value) {
 }
 
 function getPatternLinks(content) {
-  const markdown = content.replace(/```[\s\S]*?```/g, '').replace(/`[^`]*`/g, '');
+  const markdown = content
+    .replace(/```[\s\S]*?```/g, '')
+    .replace(/~~~[\s\S]*?~~~/g, '')
+    .replace(/`[^`]*`/g, '');
   return [...markdown.matchAll(markdownLink)]
     .map(match => match[1])
-    .map(destination => destination.match(/^(?:https?:\/\/[^/]+)?(\/agent-prompt-patterns\/patterns\/[a-z0-9]+(?:-[a-z0-9]+)*\/?)$/)?.[1])
+    .map(destination => destination.match(/^(?:https?:\/\/[^/]+)?(\/agent-prompt-patterns\/patterns\/[a-z0-9]+(?:-[a-z0-9]+)*\/?)(?:[?#].*)?$/)?.[1])
     .filter(Boolean)
     .map(path => path.match(/^\/agent-prompt-patterns\/patterns\/([a-z0-9]+(?:-[a-z0-9]+)*)\/?$/)?.[1])
     .filter(Boolean);
@@ -71,7 +75,7 @@ for (const file of files) {
   const source = join(contentDirectory, file);
   const content = await readFile(source, 'utf8');
   const { slug, relatedSlugs } = parseFrontmatter(content);
-  const sourceSlug = slug ?? file.replace(/\.md$/, '');
+  const sourceSlug = slug ?? file.replace(/^.*\/|\.md$/g, '');
   if (slugs.has(sourceSlug)) {
     errors.push(`${file}: duplicate pattern slug "${sourceSlug}" also declared by ${slugs.get(sourceSlug)}`);
   } else {
