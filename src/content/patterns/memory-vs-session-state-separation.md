@@ -3,7 +3,7 @@ title: "Memory vs. Session-State Separation"
 category: "memory-management"
 evidenceLevel: "moderate"
 summary: "Multi-session agents conflate persistent knowledge storage with transient session logs, causing memory bloat, recall noise, and false continuity. Separate storage by intent: use memory only for synthesized knowledge that cannot be re-derived, use session-store for conversation history and sprint outcomes, and use external repositories for resolved archival records."
-relatedPatterns: ["read-before-write-memory-guard", "strategic-memory-recall", "belief-entropy-checkpointing"]
+relatedPatterns: ["memory-read-before-write", "strategic-recall-before-ideation", "belief-entropy-checkpointing"]
 tags: ["memory", "session-state", "storage", "recall", "continuity", "pruning", "knowledge-management"]
 ---
 
@@ -84,6 +84,6 @@ After a storage wipe, agents rebuilt continuity by creating persistent memory to
 
 ## Related Patterns
 
-- **[Read-Before-Write Memory Guard](/agent-prompt-patterns/patterns/read-before-write-memory-guard)** — prevents accidental overwrites of existing memory topics; this pattern prevents saving to the wrong storage system entirely
-- **[Strategic Memory Recall in Autonomous Task Chains](/agent-prompt-patterns/patterns/strategic-memory-recall)** — when to recall; this pattern defines *what* to save
+- **[Read-Before-Write Memory Guard](/agent-prompt-patterns/patterns/memory-read-before-write)** — prevents accidental overwrites of existing memory topics; this pattern prevents saving to the wrong storage system entirely
+- **[Strategic Memory Recall in Autonomous Task Chains](/agent-prompt-patterns/patterns/strategic-recall-before-ideation)** — when to recall; this pattern defines *what* to save
 - **[Belief-Entropy Checkpointing](/agent-prompt-patterns/patterns/belief-entropy-checkpointing)** — when to checkpoint task state; checkpoints go to session-store, not persistent memory
