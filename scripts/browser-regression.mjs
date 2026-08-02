@@ -61,11 +61,12 @@ try {
     throw new Error('Prompt Structure button did not become active');
   }
 
+  await page.getByRole('button', { name: 'Agent Autonomy' }).click();
   await search.fill('memory');
   const composedCards = await page.locator('.pattern-card:visible').count();
   const expectedComposedCards = await page.locator('.pattern-card').evaluateAll(cards => cards.filter(card => {
     const text = `${card.getAttribute('data-title') ?? ''} ${card.querySelector('.summary')?.textContent ?? ''} ${card.getAttribute('data-tags') ?? ''}`.toLowerCase();
-    return card.getAttribute('data-category') === 'prompt-structure' && text.includes('memory');
+    return card.getAttribute('data-category') === 'agent-autonomy' && text.includes('memory');
   }).length);
   if (expectedComposedCards === 0 || composedCards !== expectedComposedCards) {
     throw new Error(`Composed filters mismatch: ${composedCards} !== ${expectedComposedCards}`);
