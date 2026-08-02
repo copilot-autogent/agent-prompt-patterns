@@ -7,9 +7,13 @@
     "prebuild": "npm run validate:content",
     "validate:content": "node scripts/validate-content.mjs",
     "build": "astro build",
-    "preview": "astro preview"
+    "preview": "astro preview",
+    "test:browser": "npm run build && npx playwright install chromium && node scripts/browser-regression.mjs"
   },
   "dependencies": {
     "astro": "^5.7.1"
+  },
+  "devDependencies": {
+    "playwright": "1.54.2"
   }
 }

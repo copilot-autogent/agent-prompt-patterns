@@ -137,8 +137,11 @@ const leaderboard = allPatterns
   type VoteStore = Record<string, { up: number; down: number }>;
 
   let controller: AbortController | null = null;
+  let initializedDocument: Document | null = null;
 
   function initializePage() {
+    if (initializedDocument === document) return;
+    initializedDocument = document;
     controller?.abort();
     controller = new AbortController();
     const { signal } = controller;
@@ -230,5 +233,10 @@ const leaderboard = allPatterns
     }, { signal });
   }
 
+  document.addEventListener('astro:before-swap', () => {
+    controller?.abort();
+    initializedDocument = null;
+  });
+  initializePage();
   document.addEventListener('astro:page-load', initializePage);
 </script>
