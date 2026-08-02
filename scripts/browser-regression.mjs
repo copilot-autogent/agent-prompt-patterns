@@ -67,7 +67,7 @@ try {
     const text = `${card.getAttribute('data-title') ?? ''} ${card.querySelector('.summary')?.textContent ?? ''} ${card.getAttribute('data-tags') ?? ''}`.toLowerCase();
     return card.getAttribute('data-category') === 'prompt-structure' && text.includes('memory');
   }).length);
-  if (composedCards !== expectedComposedCards) {
+  if (expectedComposedCards === 0 || composedCards !== expectedComposedCards) {
     throw new Error(`Composed filters mismatch: ${composedCards} !== ${expectedComposedCards}`);
   }
 
