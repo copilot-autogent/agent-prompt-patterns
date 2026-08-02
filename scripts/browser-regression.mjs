@@ -8,6 +8,7 @@ const baseUrl = process.env.BASE_URL ?? `http://127.0.0.1:${port}/agent-prompt-p
 const server = process.env.BASE_URL
   ? null
   : spawn('npm', ['run', 'preview', '--', '--host', '127.0.0.1', '--port', String(port)], {
+      detached: true,
       stdio: 'ignore',
     });
 
@@ -43,12 +44,14 @@ try {
   const totalCards = await page.locator('.pattern-card').count();
   if (totalCards !== 90) throw new Error(`Expected 90 cards, found ${totalCards}`);
 
-  await page.getByRole('searchbox', { name: 'Search patterns by title, summary, or tags' }).fill('memory');
+  const search = page.getByRole('searchbox', { name: 'Search patterns by title, summary, or tags' });
+  await search.fill('memory');
   const searchCards = await page.locator('.pattern-card:visible').count();
   if (searchCards === 0 || searchCards >= totalCards) {
     throw new Error(`Search should show a strict non-empty subset, found ${searchCards}`);
   }
 
+  await search.fill('');
   await page.getByRole('button', { name: 'Prompt Structure' }).click();
   const categoryCards = await page.locator('.pattern-card:visible').count();
   if (categoryCards === 0 || categoryCards >= totalCards) {
@@ -58,10 +61,14 @@ try {
     throw new Error('Prompt Structure button did not become active');
   }
 
-  await page.getByRole('searchbox', { name: 'Search patterns by title, summary, or tags' }).fill('');
+  await search.fill('memory');
   const composedCards = await page.locator('.pattern-card:visible').count();
-  if (composedCards !== categoryCards) {
-    throw new Error(`Clearing search should preserve category filter: ${composedCards} !== ${categoryCards}`);
+  const expectedComposedCards = await page.locator('.pattern-card').evaluateAll(cards => cards.filter(card => {
+    const text = `${card.getAttribute('data-title') ?? ''} ${card.querySelector('.summary')?.textContent ?? ''} ${card.getAttribute('data-tags') ?? ''}`.toLowerCase();
+    return card.getAttribute('data-category') === 'prompt-structure' && text.includes('memory');
+  }).length);
+  if (composedCards !== expectedComposedCards) {
+    throw new Error(`Composed filters mismatch: ${composedCards} !== ${expectedComposedCards}`);
   }
 
   const leaderboard = page.locator('#leaderboard-list');
@@ -74,11 +81,31 @@ try {
     throw new Error('Leaderboard did not show');
   }
 
+  const firstCard = page.locator('.pattern-card').first();
+  const lastCard = page.locator('.pattern-card').last();
+  const firstCardId = await firstCard.getAttribute('data-pattern-id');
+  const lastCardId = await lastCard.getAttribute('data-pattern-id');
+  const firstCardSeedNet = Number(await firstCard.locator('.score-num').getAttribute('data-vote-net'));
+  await page.evaluate(({ firstCardId, lastCardId }) => {
+    localStorage.setItem('app_votes', JSON.stringify({
+      [firstCardId]: { up: 2, down: 0 },
+      [lastCardId]: { up: 1000, down: 0 },
+    }));
+  }, { firstCardId, lastCardId });
+  await page.reload({ waitUntil: 'networkidle' });
+  const mergedNet = Number(await page.locator('.pattern-card').first().locator('.score-num').textContent());
+  if (mergedNet !== firstCardSeedNet + 2) {
+    throw new Error(`Local vote merge ran an unexpected number of times: ${mergedNet} !== ${firstCardSeedNet + 2}`);
+  }
+  if (await page.locator('#leaderboard-list .leaderboard-item').first().getAttribute('data-pattern-id') !== lastCardId) {
+    throw new Error('Leaderboard did not sort by merged local votes');
+  }
+
   if (consoleErrors.length || resourceErrors.length) {
     throw new Error(`Browser errors: ${JSON.stringify({ consoleErrors, resourceErrors })}`);
   }
   console.log('Browser regression passed: fresh load, search, category composition, and leaderboard toggle.');
 } finally {
   await browser?.close();
-  server?.kill();
+  if (server?.pid) process.kill(-server.pid);
 }
