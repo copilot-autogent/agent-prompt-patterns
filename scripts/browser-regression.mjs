@@ -25,9 +25,10 @@ async function waitForServer() {
   throw new Error(`Preview server did not become ready at ${baseUrl}`);
 }
 
+let browser;
 try {
   await waitForServer();
-  const browser = await chromium.launch();
+  browser = await chromium.launch();
   const page = await browser.newPage();
   const consoleErrors = [];
   const resourceErrors = [];
@@ -76,8 +77,8 @@ try {
   if (consoleErrors.length || resourceErrors.length) {
     throw new Error(`Browser errors: ${JSON.stringify({ consoleErrors, resourceErrors })}`);
   }
-  await browser.close();
   console.log('Browser regression passed: fresh load, search, category composition, and leaderboard toggle.');
 } finally {
+  await browser?.close();
   server?.kill();
 }
